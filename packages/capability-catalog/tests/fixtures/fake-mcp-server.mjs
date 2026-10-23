@@ -12,6 +12,7 @@ const tools = [
     description: 'Echo the given text back. Useful for testing.',
     inputSchema: { type: 'object', properties: { text: { type: 'string', minLength: 1 } }, required: ['text'], additionalProperties: false },
     annotations: { readOnlyHint: true },
+    _meta: { 'example.org/fake': { family: 'echo' } },
   },
   {
     name: 'inspect_widget_config',

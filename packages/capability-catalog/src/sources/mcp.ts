@@ -13,7 +13,7 @@ import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/cli
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { summarize, summarizeFamilies } from '../catalog.js'
-import { assignFamilies, passesFilter, type FamilyRule } from '../families.js'
+import { assignFamilies, globToRegExp, passesFilter, type FamilyRule } from '../families.js'
 import type { CallOutcome, CapabilityEntry, CapabilitySource, JsonSchema, SourceIndex } from '../types.js'
 
 /** Resolved configuration of one MCP server. */
@@ -44,6 +44,22 @@ interface CachedTool {
   readonly description: string
   readonly inputSchema: JsonSchema
   readonly readOnly?: boolean
+  /** Family the server declares in `_meta` (any namespace with a string `family`). */
+  readonly family?: string
+}
+
+/** Read a server-declared family from MCP `_meta`, under any vendor namespace. */
+export function declaredFamily(meta: unknown): string | undefined {
+  if (meta === null || typeof meta !== 'object') return undefined
+  const direct = (meta as Record<string, unknown>).family
+  if (typeof direct === 'string' && direct !== '') return direct
+  for (const value of Object.values(meta)) {
+    if (value !== null && typeof value === 'object' && typeof (value as Record<string, unknown>).family === 'string') {
+      const family = (value as Record<string, string>).family
+      if (family !== '') return family
+    }
+  }
+  return undefined
 }
 
 /** On-disk catalog cache of one server. */
@@ -147,7 +163,9 @@ export class McpSource implements CapabilitySource {
       do {
         const page = await withTimeout(client.listTools(cursor === undefined ? {} : { cursor }), this.config.discoveryTimeoutMs, `${this.key} tools/list`)
         for (const tool of page.tools) {
+          const family = declaredFamily((tool as { _meta?: unknown })._meta)
           tools.push({
+            ...family ? { family } : {},
             name: tool.name,
             description: tool.description ?? '',
             inputSchema: (tool.inputSchema ?? { type: 'object' }) as JsonSchema,
@@ -184,7 +202,11 @@ export class McpSource implements CapabilitySource {
   private adopt(cache: CatalogCache): void {
     this.catalog = cache
     const visible = cache.tools.filter((tool) => passesFilter(tool.name, this.config.allowTools, this.config.denyTools))
-    const { family, descriptions } = assignFamilies(visible.map((tool) => tool.name), this.config.families)
+    // Curated rules win; then families the server declares; then the name heuristic.
+    const curatedNames = new Set(visible.filter((tool) => this.config.families.some((rule) => rule.match.some((pattern) => globToRegExp(pattern).test(tool.name)))).map((tool) => tool.name))
+    const undeclared = visible.filter((tool) => curatedNames.has(tool.name) || tool.family === undefined).map((tool) => tool.name)
+    const { family, descriptions } = assignFamilies(undeclared, this.config.families)
+    for (const tool of visible) if (!curatedNames.has(tool.name) && tool.family !== undefined) family.set(tool.name, tool.family)
     this.descriptions = descriptions
     this.entryList = visible.map((tool) => {
       const schemaBytes = Buffer.byteLength(JSON.stringify(tool.inputSchema))

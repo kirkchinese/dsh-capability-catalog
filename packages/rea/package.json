@@ -2,12 +2,41 @@
   "name": "@kirkchinese/dsh-rea",
   "version": "0.1.0-alpha.1",
   "description": "REA reverse engineering for DeepSeek Harness through the lazy capability catalog: curated tool families, on-demand server start, no 670 KB of schemas per request",
-  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "rea", "reverse-engineering", "mcp"],
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "rea",
+    "reverse-engineering",
+    "mcp"
+  ],
   "license": "MIT",
   "author": "kirkchinese",
   "type": "module",
-  "exports": { "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json", "./locale/*.json": "./locale/*.json" },
-  "files": ["cordis.patch.yml", "families.yml", "locale/*.json", "README.md"],
-  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
-  "dependencies": { "@kirkchinese/dsh-capability-catalog": "workspace:^" }
+  "exports": {
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "families.yml",
+    "locale/*.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@kirkchinese/dsh-capability-catalog": "workspace:^"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kirkchinese/dsh-capability-catalog.git",
+    "directory": "packages/rea"
+  },
+  "homepage": "https://github.com/kirkchinese/dsh-capability-catalog#readme"
 }

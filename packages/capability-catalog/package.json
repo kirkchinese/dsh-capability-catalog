@@ -39,7 +39,8 @@
     "cordis.patch.yml",
     "locale/*.json",
     "README.md",
-    "README.zh.md"
+    "README.zh.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
@@ -67,5 +68,11 @@
     "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
     "@types/node": "^24.10.0",
     "typescript": "^5.9.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kirkchinese/dsh-capability-catalog.git",
+    "directory": "packages/capability-catalog"
+  },
+  "homepage": "https://github.com/kirkchinese/dsh-capability-catalog#readme"
 }

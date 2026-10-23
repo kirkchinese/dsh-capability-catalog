@@ -24,7 +24,8 @@
     "catalog.patch.yml",
     "rea.patch.yml",
     "locale/*.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dsh": {
     "bundle": {
@@ -36,5 +37,11 @@
   },
   "dependencies": {
     "@kirkchinese/dsh-capability-catalog": "workspace:^"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kirkchinese/dsh-capability-catalog.git",
+    "directory": "packages/re-kit"
+  },
+  "homepage": "https://github.com/kirkchinese/dsh-capability-catalog#readme"
 }

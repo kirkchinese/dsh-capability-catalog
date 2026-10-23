@@ -194,6 +194,7 @@ test('MCP source discovers, caches, connects lazily and disconnects when idle', 
   await first.start()
   assert.deepEqual(first.entries().map((entry) => entry.id), ['mcp:fake/echo_text', 'mcp:fake/inspect_widget_config'])
   assert.equal(first.entries()[0].readOnly, true)
+  assert.equal(first.entries()[0].family, 'echo', 'a family declared in _meta is used')
   assert.equal(first.connected, false, 'startup discovery closes its connection')
   assert.ok(existsSync(join(dir, 'mcp-fake.json')))
   const outcome = await first.call(first.entries()[0], { text: 'hi' }, AbortSignal.timeout(5000))
