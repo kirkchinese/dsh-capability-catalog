@@ -33,6 +33,18 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/re-kit:
+    dependencies:
+      '@kirkchinese/dsh-capability-catalog':
+        specifier: workspace:^
+        version: link:../capability-catalog
+
+  packages/rea:
+    dependencies:
+      '@kirkchinese/dsh-capability-catalog':
+        specifier: workspace:^
+        version: link:../capability-catalog
+
 packages:
 
   '@deepseek-ai/cordis@4.0.5':

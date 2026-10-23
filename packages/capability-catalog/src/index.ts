@@ -23,6 +23,11 @@ export { SearchIndex, tokenize } from './search.js'
 export type * from './types.js'
 
 export const name = 'capability-catalog'
+
+/** Service through which other rows contribute MCP servers to the catalog. */
+export interface CapabilityCatalogService {
+  addMcpServer(server: McpServerConfig): Promise<() => Promise<void>>
+}
 export const inject = ['tools', 'systemPrompt']
 
 /** Position right after the Harness MCP server section. */
@@ -34,7 +39,7 @@ const FamilyRuleSchema = z.object({
   match: z.array(String).default([]).description('Glob patterns over capability names; the first matching family wins.'),
 })
 
-const McpServerSchema = z.object({
+const McpServerObject = z.object({
   name: z.string().required().pattern(/^[A-Za-z0-9_-]{1,32}$/u).description('Server key; entries get ids such as mcp:<name>/<tool>.'),
   enabled: z.boolean().default(true).description('Off: the server is never started and leaves the index.'),
   title: z.string().description('Short title for the index.'),
@@ -55,9 +60,13 @@ const McpServerSchema = z.object({
   catalogTtlMs: z.number().min(0).default(86_400_000).description('Refresh the cached tool list in the background after this age.'),
 })
 
+/** Schema of one MCP server entry, shared with the `/server` row plugin. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const McpServerSchema: z<any, any> = McpServerObject
+
 const ConfigSchema = z.object({
   enabled: z.boolean().default(true).description('Master switch. Off: no tools, no index, every MCP server stopped.'),
-  mcp: z.array(McpServerSchema).default([]).description('MCP servers served lazily through the catalog.'),
+  mcp: z.array(McpServerObject).default([]).description('MCP servers served lazily through the catalog.'),
   skills: z.object({
     enabled: z.boolean().default(true).description('Index the Harness skill catalog.'),
     takeOverCatalog: z.boolean().default(true).description('Replace the native per-session skill catalog (names plus descriptions) with the compact index, keeping a `skill` loader tool.'),
@@ -134,10 +143,20 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
 
   // MCP sources: start in parallel; each waits for its cache or its first discovery.
   const cacheDir = config.cacheDir || join(dshHome(), 'capability-catalog')
-  const servers = config.mcp.filter((server) => server.enabled)
-  const mcpSources = servers.map((server) => new McpSource(server, cacheDir, logger))
-  for (const source of mcpSources) catalog.add(source)
-  await Promise.all(mcpSources.map((source) => source.start()))
+  const addMcpServer = async (server: McpServerConfig): Promise<() => Promise<void>> => {
+    if (!server.enabled) return async () => undefined
+    const source = new McpSource(server, cacheDir, logger)
+    const remove = catalog.add(source)
+    const dispose = async () => {
+      remove()
+      await source.dispose()
+    }
+    await source.start()
+    return dispose
+  }
+  // Other bundles contribute servers through `@kirkchinese/dsh-capability-catalog/server` rows.
+  ctx.provide('capabilityCatalog', { addMcpServer } satisfies CapabilityCatalogService)
+  await Promise.all(config.mcp.map((server) => addMcpServer(server)))
 
   // Skills.
   const skillTakeover = config.skills.enabled && config.skills.takeOverCatalog && skillsService !== undefined

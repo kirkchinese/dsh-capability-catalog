@@ -151,6 +151,7 @@ export interface HarnessContext {
   effect(execute: () => (() => void) | void, label?: string): () => void
   on(name: string, listener: (...args: any[]) => any): () => void
   get(name: string): unknown
+  provide(name: string, value?: unknown): () => void
   logger(name: string): { info(...a: unknown[]): void; warn(...a: unknown[]): void; debug(...a: unknown[]): void }
   tools: {
     register(definition: ToolDefinitionLike): () => void
