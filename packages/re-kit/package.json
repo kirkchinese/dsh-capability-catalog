@@ -1,6 +1,6 @@
 {
   "name": "@kirkchinese/dsh-re-kit",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "One-step kit for DeepSeek Harness: the lazy capability catalog (MCP tools and skills behind one compact index) plus REA reverse engineering",
   "keywords": [
     "deepseek-harness",
