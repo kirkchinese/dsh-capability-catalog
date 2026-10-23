@@ -10,7 +10,8 @@ DSH 会把每个可见工具的完整 schema 放进每次请求。接一个 REA 
 - 三个固定工具按需取用：`capability_search` 检索或浏览某族，`capability_describe` 查看准确参数（超大 schema 先给紧凑签名，可按 JSON Pointer 展开），`capability_call` 校验参数后调用；
 - 模型看到的工具列表在会话中从不变化，前缀缓存稳定，也不依赖 DSH 目前在 DeepSeek 官方端点上有问题的会话中途追加工具机制；
 - MCP 服务器用到才启动，空闲自动断开；工具清单缓存在磁盘上，启动 DSH 时不必拉起服务器；每个服务器和整个插件都有开关；
-- 接管 skill 目录：原生目录不再逐会话发送全部描述，改由索引列出名称和短描述，`skill` 工具与 `/name` 用法不变。
+- 接管 skill 目录：原生目录不再逐会话发送全部描述，改由索引列出名称和短描述，`skill` 工具与 `/name` 用法不变；
+- 每个 MCP 服务器、每个 skill 都能单独开关，分全局和会话两级：「插件」页的设置卡片管全局，输入框左侧的「能力」按钮管当前会话（默认 / 开 / 关）。
 
 ## 实测（DeepSeek 官方 API，DSH 0.2.1-rc.2 隔离实例）
 
@@ -59,7 +60,14 @@ dsh plugin --profile web add @kirkchinese/dsh-capability-catalog
 
 其他包也可以各自插入一行 `@kirkchinese/dsh-capability-catalog/server` 来添加服务器，互不覆盖配置。整合包与单独的包二选一，不要同时安装。
 
-关闭：把 `enabled` 设为 `false`（整个插件），或把某个服务器的 `enabled` 设为 `false`。关闭后不注册工具、不进索引，已启动的 MCP 进程立即关闭。完整配置项见[插件说明](packages/capability-catalog/README.md)。
+## 设置界面
+
+- **插件页 → 能力目录（或逆向工具整合包）**：常驻索引大小、MCP 服务器的运行状态与开关、按族分组的 skill 开关（搜索、按开/关筛选、每族一键全开/全关）。全局生效，立即生效；关掉的服务器会停止运行。
+- **输入框左侧「能力」按钮**：只作用于当前会话，每项可选「默认 / 开 / 关」，按钮上显示本会话关闭了几项；「恢复默认」清除本会话的全部覆盖。
+
+生效顺序：会话设置 > 全局设置 > 配置文件默认值。关掉的能力从索引、检索和调用中一并移除；模型直接调用时会得到“已在本会话关闭”的提示。开关保存在 `$DSH_HOME/capability-catalog/toggles.json`，不写入会话日志。
+
+关闭整个插件：把 `capability-catalog` 行的 `enabled` 设为 `false`，此时不注册工具、不进索引、不运行任何 MCP 服务器，原生 skill 目录恢复。完整配置项见[插件说明](packages/capability-catalog/README.md)。
 
 ## 设计与上游
 

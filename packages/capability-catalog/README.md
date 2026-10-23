@@ -67,6 +67,13 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
       config: { name: github, command: npx, args: ['-y', '@modelcontextprotocol/server-github'] }
 ```
 
+## 开关与设置界面
+
+- 全局：「插件」页本插件（或整合包）详情中的设置卡片。
+- 会话：输入框左侧「能力」按钮，每项「默认 / 开 / 关」。
+- 生效顺序：会话 > 全局 > 配置（`mcp[].enabled`，skill 默认开启）。全局关闭的服务器不运行；会话关闭只对该会话隐藏。
+- 状态文件：`cacheDir/toggles.json`，最多保留最近 500 个会话的覆盖。
+
 ## 行为细节
 
 - **缓存：** 工具清单写入 `cacheDir/mcp-<name>.json`，键为命令、参数、环境、URL 的哈希。有缓存时启动不连接服务器；启动时的首次发现结束后立即断开。

@@ -1,6 +1,6 @@
 {
   "name": "@kirkchinese/dsh-capability-catalog",
-  "version": "0.2.0-alpha.1",
+  "version": "0.1.0",
   "description": "Lazy capability catalog for DeepSeek Harness: one compact index plus search/describe/call meta-tools for MCP tools and skills, instead of every schema on every request",
   "keywords": [
     "deepseek-harness",

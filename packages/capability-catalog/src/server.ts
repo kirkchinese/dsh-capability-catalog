@@ -18,7 +18,7 @@ import type { McpServerConfig } from './sources/mcp.js'
 import type { HarnessContext } from './types.js'
 
 export const name = 'capability-catalog-server'
-export const inject = ['capabilityCatalog']
+export const inject = ['capabilityCatalogServers']
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Config: any = McpServerSchema
 
@@ -28,14 +28,14 @@ export const Config: any = McpServerSchema
  * @param config - resolved server configuration.
  */
 export async function apply(rawCtx: unknown, config: McpServerConfig): Promise<void> {
-  const ctx = rawCtx as HarnessContext & { capabilityCatalog: CapabilityCatalogService }
+  const ctx = rawCtx as HarnessContext & { capabilityCatalogServers: CapabilityCatalogService }
   let dispose: (() => Promise<void>) | undefined
   let disposed = false
   ctx.effect(() => () => {
     disposed = true
     void dispose?.()
   }, `capability-catalog.server(${config.name})`)
-  const remove = await ctx.capabilityCatalog.addMcpServer(config)
+  const remove = await ctx.capabilityCatalogServers.addMcpServer(config)
   if (disposed) await remove()
   else dispose = remove
 }

@@ -124,7 +124,13 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   const ctx = rawCtx as HarnessContext
   if (!config.enabled) {
     // Server rows contributed by other bundles settle as no-ops instead of waiting forever.
-    ctx.provide('capabilityCatalog', { addMcpServer: async () => async () => undefined } satisfies CapabilityCatalogService)
+    ctx.provide('capabilityCatalogServers', { addMcpServer: async () => async () => undefined } satisfies CapabilityCatalogService)
+    // The settings page still loads and explains that the catalog is off.
+    const offApi: CatalogRemoteApi = {
+      overview: async (sessionId) => ({ enabled: false, sessionId: sessionId ?? null, takeOverSkills: false, servers: [], skills: [], indexChars: 0 }),
+      set: async () => { throw new Error('The capability catalog is switched off (enabled: false).') },
+    }
+    ctx.plugin(CatalogRemote as never, offApi as never)
     return
   }
   const logger = ctx.logger('capability-catalog')
@@ -183,7 +189,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     }
   }), 'capability-catalog.toggles')
   // Other bundles contribute servers through `@kirkchinese/dsh-capability-catalog/server` rows.
-  ctx.provide('capabilityCatalog', { addMcpServer } satisfies CapabilityCatalogService)
+  ctx.provide('capabilityCatalogServers', { addMcpServer } satisfies CapabilityCatalogService)
   await Promise.all(config.mcp.map((server) => addMcpServer(server)))
 
   // Skills.

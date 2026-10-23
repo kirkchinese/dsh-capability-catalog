@@ -51,6 +51,7 @@ window.__ModuleLoader__.load({
         filterOff: '已关闭',
         allOn: '全开',
         allOff: '全关',
+        disabled: '能力目录已关闭（配置 enabled: false）：不注册工具、不进索引，MCP 服务器不运行。',
         globalNote: '这里的开关作用于所有会话，立即生效。单个会话可以在输入框左侧的「能力」按钮中覆盖。关闭的服务器会停止运行。',
         noTakeover: '未接管 skill 目录（skills.takeOverCatalog 为 false）：skill 开关不会影响 DSH 原生的 skill 目录。',
         loading: '加载中…',
@@ -83,6 +84,7 @@ window.__ModuleLoader__.load({
         filterOff: 'Off',
         allOn: 'All on',
         allOff: 'All off',
+        disabled: 'The capability catalog is switched off (enabled: false): no tools, no index, no MCP servers running.',
         globalNote: 'These switches apply to every session immediately. A session can override them from the Capabilities button left of the input box. A server switched off stops running.',
         noTakeover: 'The skill catalog is not taken over (skills.takeOverCatalog is false): skill switches do not affect the native skill catalog.',
         loading: 'Loading…',
@@ -269,6 +271,7 @@ window.__ModuleLoader__.load({
             : h('div', { className: 'cc-note' }, t.loading))
       }
 
+      if (!data.enabled) return h('div', { className: 'cc-page' }, h('div', { className: 'cc-note' }, t.disabled))
       const visibleSkills = data.skills.filter((skill) => matches(skill, query) && (filter === 'all' || (filter === 'on') === skill.effective))
       const totalTools = data.servers.reduce((sum, server) => sum + (server.effective ? server.tools : 0), 0)
       const enabledSkills = data.skills.filter((skill) => skill.effective).length
@@ -337,7 +340,7 @@ window.__ModuleLoader__.load({
         }
       }, [open])
 
-      if (!sessionId) return null
+      if (!sessionId || (data && !data.enabled)) return null
       const offCount = data ? data.servers.filter((server) => !server.effective).length + data.skills.filter((skill) => !skill.effective).length : 0
       const change = async (kind, name, value) => {
         setActionError(null)

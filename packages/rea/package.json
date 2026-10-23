@@ -1,6 +1,6 @@
 {
   "name": "@kirkchinese/dsh-rea",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0",
   "description": "REA reverse engineering for DeepSeek Harness through the lazy capability catalog: curated tool families, on-demand server start, no 670 KB of schemas per request",
   "keywords": [
     "deepseek-harness",
