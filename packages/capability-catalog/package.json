@@ -1,0 +1,42 @@
+{
+  "name": "@kirkchinese/dsh-capability-catalog",
+  "version": "0.1.0-alpha.2",
+  "description": "Lazy capability catalog for DeepSeek Harness: one compact index plus search/describe/call meta-tools for MCP tools and skills, instead of every schema on every request",
+  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "cordis", "mcp", "skills", "tool-search", "context-optimization"],
+  "license": "MIT",
+  "author": "kirkchinese",
+  "type": "module",
+  "engines": { "node": "^22.19.0 || >=24.0.0" },
+  "exports": {
+    ".": { "types": "./lib/index.d.ts", "default": "./lib/index.js" },
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "files": ["lib/**/*.js", "lib/**/*.d.ts", "cordis.patch.yml", "locale/*.json", "README.md", "README.zh.md"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test tests/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.2.0",
+    "ajv": "8.20.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.4 || 4.0.5",
+    "@deepseek-ai/schemastery": "3.18.4 || 3.18.5",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2 || 0.2.1-rc.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/schemastery": "3.18.5",
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}

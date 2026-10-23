@@ -1,0 +1,6 @@
+# Capability catalog: one compact index plus search/describe/call tools.
+# Add MCP servers under config.mcp in your own cordis.patch.yml (an override replaces the whole config).
+- insert:
+    - id: capability-catalog
+      name: '@kirkchinese/dsh-capability-catalog'
+      config: {}

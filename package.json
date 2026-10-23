@@ -1,0 +1,10 @@
+{
+  "private": true,
+  "name": "dsh-capability-catalog-workspace",
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "build": "pnpm --dir packages/capability-catalog build",
+    "typecheck": "pnpm --dir packages/capability-catalog typecheck",
+    "test": "pnpm --dir packages/capability-catalog test"
+  }
+}
