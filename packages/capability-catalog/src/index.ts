@@ -120,7 +120,11 @@ function dshHome(): string {
  */
 export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<void> {
   const ctx = rawCtx as HarnessContext
-  if (!config.enabled) return
+  if (!config.enabled) {
+    // Server rows contributed by other bundles settle as no-ops instead of waiting forever.
+    ctx.provide('capabilityCatalog', { addMcpServer: async () => async () => undefined } satisfies CapabilityCatalogService)
+    return
+  }
   const logger = ctx.logger('capability-catalog')
   const catalog = new Catalog()
   ctx.effect(() => () => void catalog.dispose(), 'capability-catalog.dispose')
