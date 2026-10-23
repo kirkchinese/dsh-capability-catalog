@@ -44,6 +44,7 @@ export function tokenize(text: string): string[] {
 function stem(word: string): string {
   if (word.length <= 4) return word
   for (const suffix of ['ations', 'ation', 'ings', 'ing', 'ies', 'es', 's', 'ed']) {
+    if (suffix === 's' && (word.endsWith('ss') || word.endsWith('us'))) continue
     if (word.endsWith(suffix) && word.length - suffix.length >= 3) {
       return suffix === 'ies' ? word.slice(0, -3) + 'y' : word.slice(0, -suffix.length)
     }
