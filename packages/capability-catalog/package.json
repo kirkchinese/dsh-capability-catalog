@@ -1,6 +1,6 @@
 {
   "name": "@kirkchinese/dsh-capability-catalog",
-  "version": "0.1.0-alpha.4",
+  "version": "0.2.0-alpha.1",
   "description": "Lazy capability catalog for DeepSeek Harness: one compact index plus search/describe/call meta-tools for MCP tools and skills, instead of every schema on every request",
   "keywords": [
     "deepseek-harness",
@@ -29,11 +29,17 @@
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./client": "./client/client.js"
   },
   "main": "./lib/index.js",
   "types": "./lib/index.d.ts",
   "files": [
+    "client/*.js",
     "lib/**/*.js",
     "lib/**/*.d.ts",
     "cordis.patch.yml",
@@ -45,6 +51,16 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
     }
   },
   "scripts": {
@@ -60,14 +76,18 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "4.0.4 || 4.0.5",
     "@deepseek-ai/schemastery": "3.18.4 || 3.18.5",
-    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2 || 0.2.1-rc.3"
+    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2 || 0.2.1-rc.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2 || 0.2.1-rc.3",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
     "@deepseek-ai/schemastery": "3.18.5",
     "@deepseek-ai/dsh-subprocess": "0.2.1-rc.2",
     "@types/node": "^24.10.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.2",
+    "zod": "4.4.3"
   },
   "repository": {
     "type": "git",

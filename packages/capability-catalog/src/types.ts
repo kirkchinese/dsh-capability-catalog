@@ -69,8 +69,11 @@ export interface CapabilitySource {
   readonly key: string
   /** Current entries for the viewing scope. */
   entries(view: ViewContext): readonly CapabilityEntry[]
-  /** Index block for the viewing scope, or undefined when the source has nothing to show. */
-  index(view: ViewContext): SourceIndex | undefined
+  /**
+   * Index block for the viewing scope, or undefined when the source has nothing to show.
+   * @param entries - this source's entries that are enabled for the viewer.
+   */
+  index(view: ViewContext, entries: readonly CapabilityEntry[]): SourceIndex | undefined
   /** Refresh asynchronous state before a model step. */
   refresh?(view: ViewContext, signal: AbortSignal): Promise<void>
   /** Execute a tool entry. */
@@ -84,6 +87,8 @@ export interface ViewContext {
   readonly scope?: object
   /** Working directory of the viewing agent, when known. */
   readonly cwd?: string
+  /** Session id of the viewing agent, for session-level toggles. */
+  readonly sessionId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +157,7 @@ export interface HarnessContext {
   on(name: string, listener: (...args: any[]) => any): () => void
   get(name: string): unknown
   provide(name: string, value?: unknown): () => void
+  plugin(plugin: unknown, config?: unknown): unknown
   logger(name: string): { info(...a: unknown[]): void; warn(...a: unknown[]): void; debug(...a: unknown[]): void }
   tools: {
     register(definition: ToolDefinitionLike): () => void

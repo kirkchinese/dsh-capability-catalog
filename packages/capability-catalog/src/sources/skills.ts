@@ -117,15 +117,15 @@ export class SkillSource implements CapabilitySource {
     return this.state(view)?.entries ?? []
   }
 
-  index(view: ViewContext): SourceIndex | undefined {
+  index(view: ViewContext, entries: readonly CapabilityEntry[]): SourceIndex | undefined {
     const state = this.state(view)
-    if (state === undefined || state.entries.length === 0) return undefined
-    const families = summarizeFamilies(state.entries, state.descriptions, Number.POSITIVE_INFINITY)
-    const byName = new Map(state.entries.map((entry) => [entry.name, entry]))
+    if (state === undefined || entries.length === 0) return undefined
+    const families = summarizeFamilies(entries, state.descriptions, Number.POSITIVE_INFINITY)
+    const byName = new Map(entries.map((entry) => [entry.name, entry]))
     return {
       source: this.key,
       title: 'skills — reusable task instructions',
-      total: state.entries.length,
+      total: entries.length,
       families: this.config.indexMode === 'names' ? families : families.map((family) => ({
         ...family,
         members: family.examples.map((name) => ({ name, brief: brief(byName.get(name)?.summary ?? '', this.config.briefChars) })),

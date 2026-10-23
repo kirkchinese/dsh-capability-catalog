@@ -112,6 +112,12 @@ export class McpSource implements CapabilitySource {
   private inFlight = 0
   private disposed = false
   private refreshing: Promise<void> | undefined
+  private started = false
+
+  /** Whether discovery has been allowed to run (the server is not switched off). */
+  get discovered(): boolean {
+    return this.started
+  }
 
   constructor(
     private readonly config: McpServerConfig,
@@ -129,7 +135,8 @@ export class McpSource implements CapabilitySource {
    * Load the cached catalog and discover when it is missing or belongs to another launch identity.
    * A stale but matching cache is used immediately and refreshed in the background.
    */
-  async start(): Promise<void> {
+  async start(options: { discover?: boolean } = {}): Promise<void> {
+    const allowDiscovery = options.discover ?? true
     const key = cacheKey(this.config)
     try {
       const cached = JSON.parse(await readFile(this.cachePath, 'utf8')) as CatalogCache
@@ -137,6 +144,8 @@ export class McpSource implements CapabilitySource {
     } catch {
       // Missing or unreadable cache: discover below.
     }
+    if (!allowDiscovery) return
+    this.started = true
     if (this.catalog === undefined) {
       await this.discover(false).catch((error: unknown) => {
         this.failure = `discovery failed: ${error instanceof Error ? error.message : String(error)}`
@@ -229,15 +238,41 @@ export class McpSource implements CapabilitySource {
     return this.entryList
   }
 
-  index(): SourceIndex | undefined {
+  /** Server name as configured. */
+  get name(): string {
+    return this.config.name
+  }
+
+  /** Display title for settings views. */
+  get title(): string {
+    return this.config.title ?? this.config.name
+  }
+
+  /** Configured default enablement. */
+  get configuredEnabled(): boolean {
+    return this.config.enabled
+  }
+
+  /** Number of tools after allow/deny filtering. */
+  get toolCount(): number {
+    return this.entryList.length
+  }
+
+  /** Discovery failure, if the server has no usable catalog. */
+  get problem(): string | undefined {
+    return this.failure
+  }
+
+  index(_view: unknown, entries: readonly CapabilityEntry[]): SourceIndex | undefined {
+    if (entries.length === 0 && !this.failure) return undefined
     const title = this.config.title ?? `MCP server "${this.config.name}"`
     const description = this.config.description ?? (this.catalog?.instructions ? summarize(this.catalog.instructions, 240) : undefined)
     return {
       source: this.key,
       title: `${this.key} — ${title}`,
       ...description ? { description } : {},
-      total: this.entryList.length,
-      families: summarizeFamilies(this.entryList, this.descriptions),
+      total: entries.length,
+      families: summarizeFamilies(entries, this.descriptions),
       ...this.failure && this.entryList.length === 0 ? { note: `${this.failure}; tools are unavailable until the next successful discovery` } : {},
     }
   }

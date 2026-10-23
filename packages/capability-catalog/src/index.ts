@@ -14,6 +14,8 @@ import { Catalog, type MetaToolNames } from './catalog.js'
 import { McpSource, type McpServerConfig } from './sources/mcp.js'
 import { SkillSource } from './sources/skills.js'
 import { createTools, type ToolLimits } from './tools.js'
+import { ToggleStore } from './toggles.js'
+import { CatalogRemote, type CatalogRemoteApi } from './remote.js'
 import type { FamilyRule } from './families.js'
 import type { HarnessAgent, HarnessContext, ToolExecutionLike, ViewContext } from './types.js'
 
@@ -140,32 +142,56 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
       return undefined
     }
   }
-  const viewOf = async (exec: ToolExecutionLike): Promise<ViewContext> => {
-    const cwd = await cwdOf(exec.agent, exec.signal)
-    return { ...exec.agent ? { scope: exec.agent } : {}, ...cwd ? { cwd } : {} }
+  const viewFor = async (agent: HarnessAgent | undefined, signal: AbortSignal): Promise<ViewContext> => {
+    const cwd = await cwdOf(agent, signal)
+    return { ...agent ? { scope: agent, sessionId: agent.id } : {}, ...cwd ? { cwd } : {} }
   }
+  const viewOf = (exec: ToolExecutionLike): Promise<ViewContext> => viewFor(exec.agent, exec.signal)
 
-  // MCP sources: start in parallel; each waits for its cache or its first discovery.
+  // Per-capability switches, globally and per session.
   const cacheDir = config.cacheDir || join(dshHome(), 'capability-catalog')
+  const toggles = new ToggleStore(join(cacheDir, 'toggles.json'))
+  await toggles.load()
+  const servers = new Map<string, McpSource>()
+  const serverOf = (sourceKey: string) => servers.get(sourceKey.replace(/^mcp:/u, ''))
+  catalog.isEnabled = (entry, view) => entry.kind === 'skill'
+    ? toggles.enabled('skill', entry.name, view.sessionId)
+    : toggles.enabled('server', entry.source.replace(/^mcp:/u, ''), view.sessionId, serverOf(entry.source)?.configuredEnabled ?? true)
+
+  // MCP sources. A server switched off globally is listed but never started.
+  const startIfEnabled = async (source: McpSource) => {
+    if (toggles.globallyEnabled(source.name, source.configuredEnabled)) await source.start()
+    else await source.start({ discover: false })
+  }
   const addMcpServer = async (server: McpServerConfig): Promise<() => Promise<void>> => {
-    if (!server.enabled) return async () => undefined
+    if (servers.has(server.name)) throw new Error(`capability-catalog: MCP server "${server.name}" is configured twice`)
     const source = new McpSource(server, cacheDir, logger)
     const remove = catalog.add(source)
+    servers.set(server.name, source)
     const dispose = async () => {
       remove()
+      if (servers.get(server.name) === source) servers.delete(server.name)
       await source.dispose()
     }
-    await source.start()
+    await startIfEnabled(source)
     return dispose
   }
+  ctx.effect(() => toggles.onChange(() => {
+    for (const source of servers.values()) {
+      if (!toggles.globallyEnabled(source.name, source.configuredEnabled)) void source.disconnect('switched off')
+      else if (!source.discovered) void source.start().catch((error: unknown) => logger.warn(`capability-catalog: starting ${source.key} failed`, error))
+    }
+  }), 'capability-catalog.toggles')
   // Other bundles contribute servers through `@kirkchinese/dsh-capability-catalog/server` rows.
   ctx.provide('capabilityCatalog', { addMcpServer } satisfies CapabilityCatalogService)
   await Promise.all(config.mcp.map((server) => addMcpServer(server)))
 
   // Skills.
   const skillTakeover = config.skills.enabled && config.skills.takeOverCatalog && skillsService !== undefined
+  let skillSource: SkillSource | undefined
   if (config.skills.enabled && skillsService !== undefined) {
-    catalog.add(new SkillSource(skillsService, { indexMode: config.skills.indexMode, briefChars: config.skills.briefChars, families: config.skills.families, allow: config.skills.allow, deny: config.skills.deny }))
+    skillSource = new SkillSource(skillsService, { indexMode: config.skills.indexMode, briefChars: config.skills.briefChars, families: config.skills.families, allow: config.skills.allow, deny: config.skills.deny })
+    catalog.add(skillSource)
   }
 
   const tools = createTools(skillsService, catalog, names, config.limits, viewOf)
@@ -173,13 +199,16 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   ctx.tools.register(tools.describe)
   ctx.tools.register(tools.call)
 
-  // The standing index. It only depends on catalog content, so it stays byte-identical
-  // across steps and sessions with the same configuration.
+  // The standing index. It depends only on catalog content and the viewer's switches, so it
+  // stays byte-identical across steps while nothing is switched.
   ctx.systemPrompt.section({
     name: 'capability-catalog',
     order: SECTION_ORDER,
     interpolate: false,
-    text: (context) => catalog.renderIndex(context.scope ? { scope: context.scope } : {}, names, skillTakeover),
+    text: (context) => {
+      const agent = context.scope as HarnessAgent | undefined
+      return catalog.renderIndex(agent ? { scope: agent, sessionId: agent.id } : {}, names, skillTakeover)
+    },
   })
 
   // Prime an unscoped view so the first prompt of any agent already has an index, then
@@ -188,8 +217,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   ctx.on('agent/created', async ({ agent, signal }: { agent: HarnessAgent; signal?: AbortSignal }) => {
     const effective = signal ?? AbortSignal.timeout(30_000)
     try {
-      const cwd = await cwdOf(agent, effective)
-      await catalog.refresh({ scope: agent, ...cwd ? { cwd } : {} }, effective)
+      await catalog.refresh(await viewFor(agent, effective), effective)
     } catch (error) {
       if (!effective.aborted) logger.warn('capability-catalog: agent refresh failed', error)
     }
@@ -198,8 +226,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   // Refresh per-agent state (skills depend on scope and working directory) before each step.
   ctx.on('agent/pre-step', async (payload: { agent: HarnessAgent; signal: AbortSignal }, next: () => Promise<unknown>) => {
     try {
-      const cwd = await cwdOf(payload.agent, payload.signal)
-      await catalog.refresh({ scope: payload.agent, ...cwd ? { cwd } : {} }, payload.signal)
+      await catalog.refresh(await viewFor(payload.agent, payload.signal), payload.signal)
     } catch (error) {
       if (!payload.signal.aborted) logger.warn('capability-catalog: refresh failed', error)
     }
@@ -227,6 +254,46 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
       owned.set(agent.id, dispose)
     })
   }
+
+  // Settings page and per-session controls.
+  const agents = ctx.get('agents') as { get(id: string): HarnessAgent | undefined } | undefined
+  const api: CatalogRemoteApi = {
+    async overview(sessionId, signal) {
+      const agent = sessionId === undefined ? undefined : agents?.get(sessionId)
+      const view: ViewContext = agent ? await viewFor(agent, signal) : sessionId ? { sessionId } : {}
+      if (agent) await catalog.refresh(view, signal).catch(() => undefined)
+      const sessionLayer = toggles.session(sessionId)
+      return {
+        enabled: true,
+        sessionId: sessionId ?? null,
+        takeOverSkills: skillTakeover,
+        servers: [...servers.values()].map((source) => ({
+          name: source.name,
+          title: source.title,
+          tools: source.toolCount,
+          connected: source.connected,
+          problem: source.problem ?? null,
+          configured: source.configuredEnabled,
+          global: toggles.global().servers[source.name] ?? null,
+          session: sessionLayer?.servers[source.name] ?? null,
+          effective: toggles.enabled('server', source.name, sessionId, source.configuredEnabled),
+        })),
+        skills: (skillSource?.entries(view) ?? []).map((entry) => ({
+          name: entry.name,
+          family: entry.family,
+          summary: entry.summary,
+          global: toggles.global().skills[entry.name] ?? null,
+          session: sessionLayer?.skills[entry.name] ?? null,
+          effective: toggles.enabled('skill', entry.name, sessionId),
+        })),
+        indexChars: catalog.renderIndex(view, names, skillTakeover).length,
+      }
+    },
+    async set(request) {
+      await toggles.set(request.scope === 'global' ? 'global' : { sessionId: request.sessionId! }, request.kind, request.name, request.value)
+    },
+  }
+  ctx.plugin(CatalogRemote as never, api as never)
 
   logger.info(`capability-catalog: ${catalog.entries({}).length} entries from ${catalog.list().length} sources`)
 }

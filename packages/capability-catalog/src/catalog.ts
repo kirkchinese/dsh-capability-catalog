@@ -55,6 +55,8 @@ export interface MetaToolNames {
 export class Catalog {
   private readonly sources = new Map<string, CapabilitySource>()
   private cache: { key: string; index: SearchIndex } | undefined
+  /** Decides whether an entry is enabled for a viewer; everything is enabled by default. */
+  isEnabled: (entry: CapabilityEntry, view: ViewContext) => boolean = () => true
 
   /**
    * Add a source; returns its disposer.
@@ -78,8 +80,13 @@ export class Catalog {
     return this.sources.get(key)
   }
 
-  /** Every entry visible to the viewer. */
+  /** Every entry enabled for the viewer. */
   entries(view: ViewContext): CapabilityEntry[] {
+    return this.allEntries(view).filter((entry) => this.isEnabled(entry, view))
+  }
+
+  /** Every entry, enabled or not (for settings views and precise error messages). */
+  allEntries(view: ViewContext): CapabilityEntry[] {
     return this.list().flatMap((source) => source.entries(view))
   }
 
@@ -88,8 +95,8 @@ export class Catalog {
    * @param id - entry id or bare name.
    * @param view - viewing scope.
    */
-  find(id: string, view: ViewContext): CapabilityEntry | { ambiguous: CapabilityEntry[] } | undefined {
-    const entries = this.entries(view)
+  find(id: string, view: ViewContext, includeDisabled = false): CapabilityEntry | { ambiguous: CapabilityEntry[] } | undefined {
+    const entries = includeDisabled ? this.allEntries(view) : this.entries(view)
     const exact = entries.find((entry) => entry.id === id)
     if (exact) return exact
     const named = entries.filter((entry) => entry.name === id || entry.name === id.replace(/^skill:/u, ''))
@@ -118,7 +125,9 @@ export class Catalog {
 
   /** Index blocks of every source, in registration order. */
   indexes(view: ViewContext): SourceIndex[] {
-    return this.list().map((source) => source.index(view)).filter((index): index is SourceIndex => index !== undefined)
+    return this.list()
+      .map((source) => source.index(view, source.entries(view).filter((entry) => this.isEnabled(entry, view))))
+      .filter((index): index is SourceIndex => index !== undefined)
   }
 
   /**

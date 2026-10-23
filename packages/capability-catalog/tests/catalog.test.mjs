@@ -11,6 +11,7 @@ import { assignFamilies, passesFilter } from '../lib/families.js'
 import { McpSource } from '../lib/sources/mcp.js'
 import { skillFamilies, SkillSource } from '../lib/sources/skills.js'
 import { createTools, renderMcpContent } from '../lib/tools.js'
+import { ToggleStore } from '../lib/toggles.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const reaTools = JSON.parse(gunzipSync(readFileSync(join(here, 'fixtures/rea-6.7.0-tools.json.gz'))).toString('utf8'))
@@ -33,7 +34,7 @@ function reaCatalog() {
   catalog.add({
     key: 'mcp:rea',
     entries: () => entries,
-    index: () => ({ source: 'mcp:rea', title: 'mcp:rea — REA', total: entries.length, families: summarizeFamilies(entries) }),
+    index: (_view, list) => ({ source: 'mcp:rea', title: 'mcp:rea — REA', total: list.length, families: summarizeFamilies(list) }),
     call: async (entry, args) => ({ content: [{ type: 'text', text: `${entry.name} ${JSON.stringify(args)}` }] }),
   })
   return catalog
@@ -136,7 +137,7 @@ test('skill source indexes names with brief descriptions and refreshes per scope
   const scope = {}
   await source.refresh({ scope }, AbortSignal.timeout(1000))
   assert.deepEqual(source.entries({ scope }).map((entry) => entry.id), ['skill:tdd'])
-  const index = source.index({ scope })
+  const index = source.index({ scope }, source.entries({ scope }))
   assert.equal(index.total, 1)
   assert.equal(index.families[0].members[0].brief, 'Test-driven development.')
 })
@@ -209,4 +210,34 @@ test('MCP source discovers, caches, connects lazily and disconnects when idle', 
   assert.equal(second.entries().length, 2, 'cached catalog is reused')
   await second.dispose()
   assert.equal(readFileSync(starts, 'utf8').trim().split('\n').length, 2, 'only discovery and the call started a process')
+})
+
+test('toggles resolve session over global over configured defaults and persist', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capability-toggles-'))
+  const path = join(dir, 'toggles.json')
+  const store = new ToggleStore(path)
+  await store.load()
+  assert.equal(store.enabled('skill', 'tdd', 's1'), true)
+  assert.equal(store.enabled('server', 'rea', 's1', false), false, 'configured default applies')
+  await store.set('global', 'skill', 'tdd', false)
+  assert.equal(store.enabled('skill', 'tdd', 's1'), false)
+  await store.set({ sessionId: 's1' }, 'skill', 'tdd', true)
+  assert.equal(store.enabled('skill', 'tdd', 's1'), true, 'session override wins')
+  assert.equal(store.enabled('skill', 'tdd', 's2'), false, 'other sessions keep the global value')
+  const reloaded = new ToggleStore(path)
+  await reloaded.load()
+  assert.equal(reloaded.enabled('skill', 'tdd', 's1'), true)
+  await reloaded.set({ sessionId: 's1' }, 'skill', 'tdd', null)
+  assert.equal(reloaded.session('s1'), undefined, 'empty session layers are dropped')
+})
+
+test('switched-off capabilities leave the index, search and calls', async () => {
+  const catalog = reaCatalog()
+  const off = new Set(['mcp:rea/inspect_sqlite_database'])
+  catalog.isEnabled = (entry, view) => !(view.sessionId === 's1' && off.has(entry.id))
+  assert.equal(catalog.search('sqlite database tables', { sessionId: 's1' }, {}, 3)[0]?.entry.name === 'inspect_sqlite_database', false)
+  assert.equal(catalog.search('sqlite database tables', { sessionId: 's2' }, {}, 3)[0].entry.name, 'inspect_sqlite_database')
+  assert.match(catalog.renderIndex({ sessionId: 's1' }, NAMES, true), /\(206\)/u)
+  const { call } = createTools(undefined, catalog, NAMES, LIMITS, async () => ({ sessionId: 's1' }))
+  await assert.rejects(call.execute({ id: 'mcp:rea/inspect_sqlite_database', arguments: { path: '/x' } }, exec()), /switched off/u)
 })

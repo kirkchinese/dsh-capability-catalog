@@ -34,7 +34,13 @@ function kb(bytes: number | undefined): string {
 
 function resolveEntry(catalog: Catalog, id: string, view: ViewContext): CapabilityEntry {
   const found = catalog.find(id, view)
-  if (found === undefined) throw new Error(`Unknown capability "${id}". Use capability_search to find the exact id.`)
+  if (found === undefined) {
+    const disabled = catalog.find(id, view, true)
+    if (disabled !== undefined && !('ambiguous' in disabled)) {
+      throw new Error(`${disabled.id} is switched off for this session. The user can enable it from the capability controls next to the input box or on the plugin's settings page.`)
+    }
+    throw new Error(`Unknown capability "${id}". Use capability_search to find the exact id.`)
+  }
   if ('ambiguous' in found) throw new Error(`"${id}" matches several capabilities: ${found.ambiguous.map((entry) => entry.id).join(', ')}. Use the full id.`)
   return found
 }
@@ -297,6 +303,10 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
       if (skills === undefined) throw new Error('Skills are not available in this composition.')
       const view = await viewOf(exec)
       const lookup = { ...view.scope ? { scope: view.scope } : {}, ...view.cwd ? { cwd: view.cwd } : {}, signal: exec.signal }
+      const entry = catalog.find(`skill:${name}`, view, true)
+      if (entry !== undefined && !('ambiguous' in entry) && !catalog.isEnabled(entry, view)) {
+        throw new Error(`skill "${name}" is switched off for this session. The user can enable it from the capability controls next to the input box.`)
+      }
       const definition = await skills.get(name, lookup)
       if (definition === undefined) throw new Error(`skill "${name}" is unknown or no longer available`)
       if (!definition.invocation.modelInvocable) throw new Error(`skill "${name}" is not available for model invocation`)
