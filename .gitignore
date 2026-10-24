@@ -3,3 +3,6 @@ scratch/
 *.tgz
 .DS_Store
 lib/
+media/source/
+media/out/
+media/frames/

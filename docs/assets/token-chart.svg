@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" font-family="-apple-system, 'Segoe UI', 'Noto Sans', 'Noto Sans CJK SC', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0b1024"/>
+      <stop offset="1" stop-color="#070a17"/>
+    </linearGradient>
+    <linearGradient id="old" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f4a261"/>
+      <stop offset="1" stop-color="#e76f51"/>
+    </linearGradient>
+    <linearGradient id="new" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4d6bfe"/>
+      <stop offset="1" stop-color="#5ad1ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="430" rx="18" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="959" height="429" rx="18" fill="none" stroke="#24305a"/>
+
+  <text x="40" y="52" fill="#ffffff" font-size="22" font-weight="700">First request with REA registered (207 tools)</text>
+  <text x="40" y="78" fill="#8f9bc4" font-size="14">首个请求的输入 token · DeepSeek official API · DSH 0.2.1-rc.2 · same task</text>
+
+  <!-- bar 1 -->
+  <text x="40" y="128" fill="#c9d1ee" font-size="15">dsh-mcp-client (direct)</text>
+  <rect x="250" y="110" width="560" height="28" rx="6" fill="url(#old)"/>
+  <text x="822" y="130" fill="#ffd2b8" font-size="17" font-weight="700">249,653</text>
+
+  <!-- bar 2 -->
+  <text x="40" y="178" fill="#c9d1ee" font-size="15">Capability Catalog</text>
+  <rect x="250" y="160" width="19" height="28" rx="6" fill="url(#new)"/>
+  <text x="282" y="180" fill="#b9c8ff" font-size="17" font-weight="700">8,404</text>
+  <text x="352" y="180" fill="#5ad1ff" font-size="15" font-weight="700">−96.6%</text>
+  <text x="430" y="180" fill="#6f7aa3" font-size="13">includes the whole system prompt and every built-in tool</text>
+
+  <line x1="40" y1="222" x2="920" y2="222" stroke="#1e2850"/>
+
+  <!-- small multiples -->
+  <text x="40" y="262" fill="#ffffff" font-size="17" font-weight="700">REA in every request</text>
+  <text x="40" y="284" fill="#8f9bc4" font-size="13">常驻在上下文中的内容</text>
+  <text x="40" y="324" fill="#c9d1ee" font-size="14">input schemas</text>
+  <rect x="150" y="310" width="260" height="20" rx="5" fill="url(#old)"/>
+  <text x="418" y="325" fill="#ffd2b8" font-size="14" font-weight="700">668 KB</text>
+  <text x="40" y="360" fill="#c9d1ee" font-size="14">family index</text>
+  <rect x="150" y="346" width="4" height="20" rx="1.5" fill="url(#new)"/>
+  <text x="162" y="361" fill="#b9c8ff" font-size="14" font-weight="700">≈ 3 KB</text>
+
+  <text x="500" y="262" fill="#ffffff" font-size="17" font-weight="700">Largest single schema</text>
+  <text x="500" y="284" fill="#8f9bc4" font-size="13">compare_web_captures · 只在 describe 时出现</text>
+  <text x="500" y="324" fill="#c9d1ee" font-size="14">raw JSON</text>
+  <rect x="610" y="310" width="260" height="20" rx="5" fill="url(#old)"/>
+  <text x="878" y="325" fill="#ffd2b8" font-size="14" font-weight="700">166 KB</text>
+  <text x="500" y="360" fill="#c9d1ee" font-size="14">signature</text>
+  <rect x="610" y="346" width="12" height="20" rx="4" fill="url(#new)"/>
+  <text x="632" y="361" fill="#b9c8ff" font-size="14" font-weight="700">≈ 8 KB</text>
+  <text x="696" y="361" fill="#6f7aa3" font-size="12">+ JSON Pointer to expand</text>
+
+  <text x="40" y="404" fill="#58628a" font-size="12">Measured 2026-10-23/24 in isolated DSH instances. Token counts are DeepSeek usage (uncached + cache read).</text>
+</svg>
