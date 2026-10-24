@@ -74,6 +74,8 @@ test('the standing index stays small and byte-stable', () => {
   assert.equal(first, second)
   assert.ok(first.length < 4000, `index has ${first.length} characters`)
   assert.match(first, /mcp:rea — REA \(207\)/u)
+  assert.match(first, /replaces the separate skill list/u, 'takeover text overrides the native empty-catalog reminder')
+  assert.doesNotMatch(catalog.renderIndex({}, NAMES, false), /replaces the separate skill list/u)
   const total = reaTools.reduce((sum, tool) => sum + JSON.stringify(tool.inputSchema).length, 0)
   assert.ok(total / first.length > 150, 'index is two orders of magnitude smaller than the schemas')
 })

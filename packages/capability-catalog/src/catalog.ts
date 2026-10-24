@@ -146,7 +146,10 @@ export class Catalog {
       `The capabilities below exist but are not declared as tools, so their parameters are not in context. ` +
         `Find one with \`${names.search}\` (keywords, or \`family\` to browse), read its exact parameters with \`${names.describe}\`, ` +
         `then run it with \`${names.call}\`.` +
-        (skillTakeover ? ` Load a skill with the \`${names.skill}\` tool; \`${names.search}\` with kind "skill" returns skill descriptions.` : ''),
+        (skillTakeover
+          ? ` Load a skill with the \`${names.skill}\` tool; \`${names.search}\` with kind "skill" returns skill descriptions.` +
+            ' This catalog replaces the separate skill list: a reminder saying that no skills are available refers to that old list, not to the skills below.'
+          : ''),
       'When a task matches a family below, search before concluding that no tool exists.',
     ]
     for (const block of blocks) {
