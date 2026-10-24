@@ -247,18 +247,30 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
       for (const dispose of [...owned.values()]) dispose()
       owned.clear()
     }, 'capability-catalog.skill-shadows')
-    ctx.on('agent/created', ({ agent }: { agent: HarnessAgent }) => {
+    const shadow = (agent: HarnessAgent) => {
       const agentCtx = agent.ctx
-      if (agentCtx === undefined) return
-      const dispose = agentCtx.effect(() => {
-        const unregister = agentCtx.tools.register(tools.skill)
-        return () => {
-          unregister()
-          owned.delete(agent.id)
-        }
-      }, 'capability-catalog.skill')
-      owned.set(agent.id, dispose)
-    })
+      if (agentCtx === undefined || owned.has(agent.id)) return
+      try {
+        const dispose = agentCtx.effect(() => {
+          const unregister = agentCtx.tools.register(tools.skill)
+          return () => {
+            unregister()
+            owned.delete(agent.id)
+          }
+        }, 'capability-catalog.skill')
+        owned.set(agent.id, dispose)
+      } catch (error) {
+        logger.warn(`capability-catalog: could not shadow the skill tool for ${agent.id}`, error)
+      }
+    }
+    ctx.on('agent/created', ({ agent }: { agent: HarnessAgent }) => shadow(agent))
+    // A reload (plugin update, HMR) finds agents that are already live; shadow them too, or
+    // the native catalog would come back for every open session.
+    const liveAgents = ctx.get('agents') as { list(): HarnessAgent[] } | undefined
+    for (const agent of liveAgents?.list() ?? []) {
+      shadow(agent)
+      void viewFor(agent, AbortSignal.timeout(30_000)).then((view) => catalog.refresh(view, AbortSignal.timeout(30_000))).catch(() => undefined)
+    }
   }
 
   // Settings page and per-session controls.
