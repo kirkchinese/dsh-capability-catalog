@@ -29,6 +29,9 @@ DeepSeek Harness（DSH）会把**每个可见工具的完整 JSON Schema** 放�
 
 能力目录换一种做法：**常驻在上下文里的只有一份几 KB 的分组索引，具体定义在用到时才取。**
 
+<p align="center"><a href="https://github.com/kirkchinese/dsh-capability-catalog/releases/download/v0.1.4/capability-catalog-promo.mp4"><img src="docs/assets/promo-poster.jpg" alt="宣传片" width="760"></a></p>
+<p align="center"><sub>🎬 60 秒宣传片（1080p）· 点击图片观看</sub></p>
+
 <p align="center"><img src="docs/assets/token-chart.svg" alt="直接注册 249,653 token，能力目录 8,404 token，减少 96.6%" width="880"></p>
 
 ## 工作原理

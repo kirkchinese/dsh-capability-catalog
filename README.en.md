@@ -29,6 +29,9 @@ DeepSeek Harness (DSH) sends **the full JSON Schema of every visible tool** with
 
 Capability Catalog keeps **only a few-KB family index in context** and fetches definitions when they are actually needed.
 
+<p align="center"><a href="https://github.com/kirkchinese/dsh-capability-catalog/releases/download/v0.1.4/capability-catalog-promo.mp4"><img src="docs/assets/promo-poster.jpg" alt="Promo video" width="760"></a></p>
+<p align="center"><sub>🎬 60-second promo (1080p) · click to watch</sub></p>
+
 <p align="center"><img src="docs/assets/token-chart.svg" alt="Direct registration 249,653 tokens; Capability Catalog 8,404 tokens; 96.6% less" width="880"></p>
 
 ## How it works
