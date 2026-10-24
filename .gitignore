@@ -6,3 +6,4 @@ lib/
 media/source/
 media/out/
 media/frames/
+media/render/.promo.build.html
