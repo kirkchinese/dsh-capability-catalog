@@ -309,7 +309,7 @@ export class McpSource implements CapabilitySource {
       if (!config.url) throw new Error(`${this.key}: streamable-http transport requires "url"`)
       transport = new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: { ...config.headers } } })
     }
-    const client = new Client({ name: 'dsh-capability-catalog', version: '0.1.3' })
+    const client = new Client({ name: 'dsh-capability-catalog', version: '0.1.4' })
     client.onclose = () => {
       if (this.client === client) this.client = undefined
     }

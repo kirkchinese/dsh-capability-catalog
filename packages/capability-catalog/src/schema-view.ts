@@ -111,10 +111,16 @@ function typeOf(schema: JsonSchema, pointer: string, depth: number, options: Com
     const items = asSchema(schema.items)
     if (items === undefined) return 'unknown[]'
     const inner = typeOf(items, `${pointer}/items`, depth, options, lines, indent)
-    // Keep the pointer last and clean: `{…3 fields}[] → /a/items`, never `→ /a/items[]`.
-    const arrow = inner.lastIndexOf(' → ')
-    if (arrow >= 0) return `${wrap(inner.slice(0, arrow))}[]${inner.slice(arrow)}`
-    return `${wrap(inner)}[]`
+    // Keep exactly one pointer, last and clean: `{…3 fields}[] → /a/items`, never `→ /a/items[]`.
+    const arrows = inner.split(' → ').length - 1
+    if (arrows === 0) return `${wrap(inner)}[]`
+    if (arrows === 1 && !inner.includes(' | ')) {
+      const arrow = inner.indexOf(' → ')
+      return `${inner.slice(0, arrow)}[]${inner.slice(arrow)}`
+    }
+    // A union with collapsed branches: point at the item schema as a whole.
+    const branches = Array.isArray(items.anyOf) ? items.anyOf.length : Array.isArray(items.oneOf) ? items.oneOf.length : 0
+    return `${branches > 0 ? `union<${branches}>` : 'item'}[] → ${pointer}/items`
   }
   if (type === 'object' || schema.properties !== undefined) {
     const properties = asSchema(schema.properties)

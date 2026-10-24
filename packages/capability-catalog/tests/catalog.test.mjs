@@ -284,3 +284,17 @@ test('a switched-off source leaves the index even when it reports a problem', ()
   catalog.isSourceEnabled = (source) => source.key !== 'mcp:broken'
   assert.equal(catalog.renderIndex({}, NAMES, false), '')
 })
+
+test('every pointer in every REA signature resolves, at every depth', () => {
+  const failures = []
+  for (const tool of reaTools) {
+    for (const maxDepth of [1, 2, 3]) {
+      const signature = compactSignature(tool.name, tool.inputSchema, '', { maxDepth })
+      for (const match of signature.matchAll(/→ (\S+)/gu)) {
+        const pointer = match[1]
+        if (!/^\/[^\s\[\])]*$/u.test(pointer) || resolvePointer(tool.inputSchema, pointer) === undefined) failures.push(`${tool.name}@${maxDepth}: ${pointer}`)
+      }
+    }
+  }
+  assert.deepEqual(failures.slice(0, 10), [])
+})

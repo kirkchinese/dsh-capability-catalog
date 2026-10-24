@@ -152,7 +152,7 @@ window.__ModuleLoader__.load({
 .cc-trigger:hover,.cc-trigger[aria-expanded=true]{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .cc-trigger-badge{color:var(--dsw-alias-state-warn-primary)}
 .cc-anchor{position:relative;display:inline-flex}
-.cc-popover{position:absolute;bottom:calc(100% + 8px);left:0;z-index:50;width:380px;max-width:calc(100vw - 32px);max-height:min(560px,70vh);display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 28px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary);font-size:13px}
+.cc-popover{position:fixed;z-index:1000;box-sizing:border-box;width:380px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:12px;border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-overlay);box-shadow:0 8px 28px rgba(0,0,0,.18);color:var(--dsw-alias-label-primary);font-size:13px}
 .cc-popover-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}
 .cc-popover-body{overflow:auto;display:flex;flex-direction:column;gap:12px;margin:0 -4px;padding:0 4px}
 .cc-sub{font-size:12px;font-weight:600;color:var(--dsw-alias-label-secondary);margin-bottom:4px}
@@ -337,7 +337,41 @@ window.__ModuleLoader__.load({
     function SessionControl({ api, t, sessionId }) {
       const [open, setOpen] = useState(false)
       const [query, setQuery] = useState('')
+      const [placement, setPlacement] = useState(null)
       const anchor = useRef(null)
+      // Open toward the side with more room and stay inside the window. The popover is fixed to
+      // the viewport so scroll and clip containers of the composer cannot cut it off; the
+      // composer sits at the bottom in a session but in the middle of the window on a new one.
+      const place = useCallback(() => {
+        const node = anchor.current
+        if (!node) return
+        const rect = node.getBoundingClientRect()
+        const margin = 12
+        const gap = 8
+        const above = rect.top - margin - gap
+        const below = window.innerHeight - rect.bottom - margin - gap
+        const up = above >= 320 || above >= below
+        const room = Math.max(160, Math.min(560, up ? above : below))
+        const width = Math.min(380, window.innerWidth - 2 * margin)
+        const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin))
+        setPlacement({
+          position: 'fixed',
+          left: `${left}px`,
+          width: `${width}px`,
+          ...(up ? { bottom: `${window.innerHeight - rect.top + gap}px` } : { top: `${rect.bottom + gap}px` }),
+          maxHeight: `${room}px`,
+        })
+      }, [])
+      useEffect(() => {
+        if (!open) return undefined
+        place()
+        window.addEventListener('resize', place)
+        window.addEventListener('scroll', place, true)
+        return () => {
+          window.removeEventListener('resize', place)
+          window.removeEventListener('scroll', place, true)
+        }
+      }, [open, place])
       const { data, error, set, reload } = useOverview(api, sessionId, true)
       const [actionError, setActionError] = useState(null)
 
@@ -382,7 +416,7 @@ window.__ModuleLoader__.load({
             h('rect', { x: 2, y: 9, width: 5, height: 5, rx: 1 }), h('rect', { x: 9, y: 9, width: 5, height: 5, rx: 1 })),
           t.button,
           offCount > 0 ? h('span', { className: 'cc-trigger-badge' }, `−${offCount}`) : null),
-        open ? h('div', { className: 'cc-popover', role: 'dialog', 'aria-label': t.sessionTitle },
+        open ? h('div', { className: 'cc-popover', role: 'dialog', 'aria-label': t.sessionTitle, style: placement || { visibility: 'hidden' } },
           h('div', { className: 'cc-popover-head' },
             h('span', null, t.sessionTitle),
             h('span', { className: 'cc-toolbar' },
