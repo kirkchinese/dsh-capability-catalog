@@ -14,7 +14,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
 import { summarize, summarizeFamilies } from '../catalog.js'
 import { assignFamilies, globToRegExp, passesFilter, type FamilyRule } from '../families.js'
-import type { CallOutcome, CapabilityEntry, CapabilitySource, JsonSchema, SourceIndex } from '../types.js'
+import type { CallOutcome, CapabilityEntry, CapabilitySource, JsonSchema, SourceIndex, ViewContext } from '../types.js'
 
 /** Resolved configuration of one MCP server. */
 export interface McpServerConfig {
@@ -117,6 +117,14 @@ export class McpSource implements CapabilitySource {
   /** Whether discovery has been allowed to run (the server is not switched off). */
   get discovered(): boolean {
     return this.started
+  }
+
+  /** Decides whether a viewer wants this server; set by the plugin from the switches. */
+  isWanted: (view: ViewContext) => boolean = () => true
+
+  /** Discover lazily for a viewer that switched on a server that did not start globally. */
+  async refresh(view: ViewContext): Promise<void> {
+    if (!this.started && !this.disposed && this.isWanted(view)) await this.start()
   }
 
   constructor(
@@ -301,11 +309,18 @@ export class McpSource implements CapabilitySource {
       if (!config.url) throw new Error(`${this.key}: streamable-http transport requires "url"`)
       transport = new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: { ...config.headers } } })
     }
-    const client = new Client({ name: 'dsh-capability-catalog', version: '0.1.2' })
+    const client = new Client({ name: 'dsh-capability-catalog', version: '0.1.3' })
     client.onclose = () => {
       if (this.client === client) this.client = undefined
     }
-    await withTimeout(client.connect(transport), this.config.discoveryTimeoutMs, `${this.key} connect`)
+    try {
+      await withTimeout(client.connect(transport), this.config.discoveryTimeoutMs, `${this.key} connect`)
+    } catch (error) {
+      // A timed-out or failed handshake must not leave the child process behind.
+      await client.close().catch(() => undefined)
+      await transport.close().catch(() => undefined)
+      throw error
+    }
     if (this.disposed) {
       await client.close().catch(() => undefined)
       throw new Error(`${this.key} was unloaded while connecting`)

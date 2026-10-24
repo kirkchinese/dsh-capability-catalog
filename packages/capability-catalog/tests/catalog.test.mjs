@@ -243,3 +243,42 @@ test('switched-off capabilities leave the index, search and calls', async () => 
   const { call } = createTools(undefined, catalog, NAMES, LIMITS, async () => ({ sessionId: 's1' }))
   await assert.rejects(call.execute({ id: 'mcp:rea/inspect_sqlite_database', arguments: { path: '/x' } }, exec()), /switched off/u)
 })
+
+const fakeConfig = (dir, extra = {}) => ({
+  name: 'fake', enabled: true, transport: 'stdio', command: process.execPath, args: [join(here, 'fixtures/fake-mcp-server.mjs')],
+  env: { FAKE_MCP_STARTS: join(dir, 'starts') }, headers: {}, allowTools: [], denyTools: [], families: [],
+  idleDisconnectMs: 1000, callTimeoutMs: 5000, discoveryTimeoutMs: 10_000, catalogTtlMs: 1e9, ...extra,
+})
+
+test('a server that did not start globally is discovered on demand for a session that wants it', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capability-ondemand-'))
+  const source = new McpSource(fakeConfig(dir), dir, quiet)
+  source.isWanted = (view) => view.sessionId === 'wanted'
+  await source.start({ discover: false })
+  assert.equal(source.entries().length, 0)
+  await source.refresh({ sessionId: 'other' })
+  assert.equal(source.entries().length, 0, 'other sessions do not trigger discovery')
+  await source.refresh({ sessionId: 'wanted' })
+  assert.equal(source.entries().length, 3)
+  await source.dispose()
+})
+
+test('a handshake timeout closes the child process', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'capability-timeout-'))
+  const config = fakeConfig(dir, { env: { FAKE_MCP_STARTS: join(dir, 'starts'), FAKE_MCP_HANG: '1' }, discoveryTimeoutMs: 1000 })
+  const source = new McpSource(config, dir, quiet)
+  await source.start()
+  assert.match(source.problem ?? '', /timed out/u)
+  const pid = Number(readFileSync(join(dir, 'starts'), 'utf8').trim())
+  await new Promise((resolve) => setTimeout(resolve, 1500))
+  assert.throws(() => process.kill(pid, 0), 'the timed-out server process is gone')
+  await source.dispose()
+})
+
+test('a switched-off source leaves the index even when it reports a problem', () => {
+  const catalog = new Catalog()
+  catalog.add({ key: 'mcp:broken', entries: () => [], index: () => ({ source: 'mcp:broken', title: 'mcp:broken', total: 0, families: [], note: 'discovery failed' }) })
+  assert.match(catalog.renderIndex({}, NAMES, false), /discovery failed/u)
+  catalog.isSourceEnabled = (source) => source.key !== 'mcp:broken'
+  assert.equal(catalog.renderIndex({}, NAMES, false), '')
+})

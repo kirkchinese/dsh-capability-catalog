@@ -5,6 +5,8 @@ import { appendFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 
 if (process.env.FAKE_MCP_STARTS) appendFileSync(process.env.FAKE_MCP_STARTS, `${process.pid}\n`)
+// FAKE_MCP_HANG=1 never answers, to exercise handshake timeouts.
+const hang = process.env.FAKE_MCP_HANG === '1'
 
 const tools = [
   {
@@ -31,7 +33,7 @@ const rl = createInterface({ input: process.stdin })
 rl.on('line', (line) => {
   let message
   try { message = JSON.parse(line) } catch { return }
-  if (message.id === undefined) return
+  if (message.id === undefined || hang) return
   switch (message.method) {
     case 'initialize':
       send({ jsonrpc: '2.0', id: message.id, result: {

@@ -163,8 +163,13 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   catalog.isEnabled = (entry, view) => entry.kind === 'skill'
     ? toggles.enabled('skill', entry.name, view.sessionId)
     : toggles.enabled('server', entry.source.replace(/^mcp:/u, ''), view.sessionId, serverOf(entry.source)?.configuredEnabled ?? true)
+  catalog.isSourceEnabled = (source, view) => {
+    const server = serverOf(source.key)
+    return server === undefined || toggles.enabled('server', server.name, view.sessionId, server.configuredEnabled)
+  }
 
-  // MCP sources. A server switched off globally is listed but never started.
+  // MCP sources. A server switched off globally does not start at launch; a session that
+  // switches it on discovers and runs it on demand for that session only.
   const startIfEnabled = async (source: McpSource) => {
     if (toggles.globallyEnabled(source.name, source.configuredEnabled)) await source.start()
     else await source.start({ discover: false })
@@ -172,6 +177,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   const addMcpServer = async (server: McpServerConfig): Promise<() => Promise<void>> => {
     if (servers.has(server.name)) throw new Error(`capability-catalog: MCP server "${server.name}" is configured twice`)
     const source = new McpSource(server, cacheDir, logger)
+    source.isWanted = (view) => toggles.enabled('server', server.name, view.sessionId, server.enabled)
     const remove = catalog.add(source)
     servers.set(server.name, source)
     const dispose = async () => {

@@ -57,6 +57,8 @@ export class Catalog {
   private cache: { key: string; index: SearchIndex } | undefined
   /** Decides whether an entry is enabled for a viewer; everything is enabled by default. */
   isEnabled: (entry: CapabilityEntry, view: ViewContext) => boolean = () => true
+  /** Decides whether a whole source is switched on for a viewer; a switched-off source leaves the index. */
+  isSourceEnabled: (source: CapabilitySource, view: ViewContext) => boolean = () => true
 
   /**
    * Add a source; returns its disposer.
@@ -126,6 +128,7 @@ export class Catalog {
   /** Index blocks of every source, in registration order. */
   indexes(view: ViewContext): SourceIndex[] {
     return this.list()
+      .filter((source) => this.isSourceEnabled(source, view))
       .map((source) => source.index(view, source.entries(view).filter((entry) => this.isEnabled(entry, view))))
       .filter((index): index is SourceIndex => index !== undefined)
   }
