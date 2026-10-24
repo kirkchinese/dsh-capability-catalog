@@ -27,7 +27,9 @@ const DEFAULT_OPTIONS: CompactOptions = { maxDepth: 2, maxDescription: 160, maxE
  * @param pointer - pointer such as `/properties/filters`; empty means the root.
  * @returns the subtree, or undefined when the pointer does not resolve.
  */
-export function resolvePointer(schema: unknown, pointer: string): unknown {
+export function resolvePointer(schema: unknown, rawPointer: string): unknown {
+  // Accept a pointer copied with a trailing array marker, as earlier signatures rendered it.
+  const pointer = rawPointer.trim().replace(/(\[\])+$/u, '')
   if (pointer === '' || pointer === '/') return schema
   if (!pointer.startsWith('/')) return undefined
   let node: unknown = schema
@@ -107,7 +109,12 @@ function typeOf(schema: JsonSchema, pointer: string, depth: number, options: Com
   const type = Array.isArray(schema.type) ? schema.type.join(' | ') : schema.type
   if (type === 'array') {
     const items = asSchema(schema.items)
-    return items === undefined ? 'unknown[]' : `${wrap(typeOf(items, `${pointer}/items`, depth, options, lines, indent))}[]`
+    if (items === undefined) return 'unknown[]'
+    const inner = typeOf(items, `${pointer}/items`, depth, options, lines, indent)
+    // Keep the pointer last and clean: `{…3 fields}[] → /a/items`, never `→ /a/items[]`.
+    const arrow = inner.lastIndexOf(' → ')
+    if (arrow >= 0) return `${wrap(inner.slice(0, arrow))}[]${inner.slice(arrow)}`
+    return `${wrap(inner)}[]`
   }
   if (type === 'object' || schema.properties !== undefined) {
     const properties = asSchema(schema.properties)
@@ -143,7 +150,8 @@ function fields(schema: JsonSchema, pointer: string, depth: number, options: Com
       lines.push(`${indent}}`)
       continue
     }
-    type = `${type}${constraints(node)}`
+    const arrow = type.lastIndexOf(' → ')
+    type = arrow >= 0 ? `${type.slice(0, arrow)}${constraints(node)}${type.slice(arrow)}` : `${type}${constraints(node)}`
     lines.push(`${indent}${key}${optional}: ${type}${defaultText}${description}`)
     lines.push(...nested)
   }

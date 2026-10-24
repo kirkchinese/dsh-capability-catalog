@@ -85,9 +85,11 @@ test('compact signatures collapse large schemas behind resolvable pointers', () 
   const signature = compactSignature(tool.name, tool.inputSchema, '', { maxDepth: 2 })
   assert.ok(JSON.stringify(tool.inputSchema).length > 100_000)
   assert.ok(signature.length < 6000, `signature has ${signature.length} characters`)
-  const pointers = [...signature.matchAll(/→ (\/\S+)/gu)].map((match) => match[1].replace(/\[\]$/u, ''))
+  const pointers = [...signature.matchAll(/→ (\/\S+)/gu)].map((match) => match[1])
+  assert.ok(pointers.every((pointer) => !pointer.endsWith('[]')), 'pointers carry no array marker')
   assert.ok(pointers.length > 0)
   for (const pointer of pointers) assert.notEqual(resolvePointer(tool.inputSchema, pointer), undefined, pointer)
+  assert.notEqual(resolvePointer(tool.inputSchema, `${pointers[0]}[]`), undefined, 'a trailing [] is tolerated')
 })
 
 test('compact signatures keep required markers, enums and defaults', () => {
