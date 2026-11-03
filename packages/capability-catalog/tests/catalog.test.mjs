@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { gunzipSync } from 'node:zlib'
 import { test } from 'node:test'
+import semver from 'semver'
 import { Catalog, compactSignature, resolvePointer, tokenize } from '../lib/index.js'
 import { summarize, summarizeFamilies } from '../lib/catalog.js'
 import { assignFamilies, passesFilter } from '../lib/families.js'
@@ -299,11 +300,15 @@ test('every pointer in every REA signature resolves, at every depth', () => {
   assert.deepEqual(failures.slice(0, 10), [])
 })
 
-test('manifest admits the DSH versions covered by this release', () => {
+test('manifest covers the 0.2.1 line without admitting 0.2.2 prereleases', () => {
   const manifest = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
-  for (const name of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-typert-protocol']) {
-    for (const version of ['0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5']) {
-      assert.ok(manifest.peerDependencies[name].split(' || ').includes(version), `${name} must admit ${version}`)
-    }
+  const range = manifest.engines.dsh
+  assert.equal(range, '>=0.2.1-rc.2 <0.2.2-0')
+  for (const name of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-typert-protocol']) assert.equal(manifest.peerDependencies[name], range)
+  for (const version of ['0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.1-rc.99', '0.2.1']) {
+    assert.ok(semver.satisfies(version, range, { includePrerelease: true }), `${version} must be admitted`)
+  }
+  for (const version of ['0.2.2-alpha.1', '0.2.2', '0.3.0-alpha.1']) {
+    assert.equal(semver.satisfies(version, range, { includePrerelease: true }), false, `${version} must not be admitted`)
   }
 })
