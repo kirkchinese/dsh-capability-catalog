@@ -2,7 +2,7 @@
 
 Category: Ideas / Feature request. Posted as [deepseek-harness#10812](https://github.com/deepseek-ai/deepseek-harness/discussions/10812).
 
-Status on 2026-11-03: no replies. DSH 0.2.1-rc.5 still serializes `tool_reference` only for `tool_addition`/`tool_removal`, not inside ordinary tool results, and `dsh-mcp-client` has no deferred-registration option. Capability Catalog 0.1.5 therefore keeps the fixed meta-tool fallback rather than enabling native deferred mode.
+Status on 2026-11-03: no maintainer reply. DSH 0.2.1-rc.5 still serializes `tool_reference` only for `tool_addition`/`tool_removal`, not inside ordinary tool results, and `dsh-mcp-client` has no deferred-registration option. Capability Catalog 0.1.6 therefore keeps the fixed meta-tool fallback rather than enabling native deferred mode. An rc.5 follow-up was posted in [discussioncomment-19367898](https://github.com/deepseek-ai/deepseek-harness/discussions/10812#discussioncomment-19367898).
 
 ---
 
