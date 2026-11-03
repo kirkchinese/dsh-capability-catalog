@@ -298,3 +298,12 @@ test('every pointer in every REA signature resolves, at every depth', () => {
   }
   assert.deepEqual(failures.slice(0, 10), [])
 })
+
+test('manifest admits the DSH versions covered by this release', () => {
+  const manifest = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
+  for (const name of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-typert-protocol']) {
+    for (const version of ['0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.5']) {
+      assert.ok(manifest.peerDependencies[name].split(' || ').includes(version), `${name} must admit ${version}`)
+    }
+  }
+})

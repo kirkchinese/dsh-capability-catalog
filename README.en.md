@@ -94,7 +94,7 @@ Precedence: **session › global › configuration default**. A switched-off cap
 
 ## Install
 
-Requires DSH `0.2.1-rc.2` (npm `latest`) or `0.2.1-rc.3`, Node.js `^22.19.0 || >=24.0.0`.
+Requires DSH `0.2.1-rc.2`, `0.2.1-rc.3`, or `0.2.1-rc.5` (current npm `latest`), Node.js `^22.19.0 || >=24.0.0`.
 
 **Kit** (catalog + REA in one step):
 

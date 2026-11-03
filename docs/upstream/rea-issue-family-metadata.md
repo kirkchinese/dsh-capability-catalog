@@ -1,6 +1,8 @@
 # Draft: REA feature request
 
-Template: Feature request. Status: draft, not posted.
+Template: Feature request. Posted as [morluto/rea#6870](https://github.com/morluto/rea/issues/6870).
+
+Status on 2026-11-03: #7228 merged opt-in `REA_MCP_TOOL_FAMILIES` selection. #7154 remains open and now advertises `_meta["io.github.morluto/rea"].family` using the same selection IDs. Capability Catalog already reads that field; no client mapping change is needed when it lands. REA 6.8.0 currently advertises 229 tools, so the curated 6.7.0 mapping (207 tools) remains version-specific.
 
 Context checked before drafting: #1669 (operator tool selection) was closed because "clients lazy-load tools"; #723 asks to reduce discovery repetition while keeping the complete catalog; #2019 reports context exhaustion with DeepSeek through Claude Code. This request keeps the complete catalog and does not hide tools.
 
