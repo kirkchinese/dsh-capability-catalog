@@ -14,6 +14,7 @@ import { Catalog, type MetaToolNames } from './catalog.js'
 import { McpSource, type McpServerConfig } from './sources/mcp.js'
 import { SkillSource } from './sources/skills.js'
 import { createTools, type ToolLimits } from './tools.js'
+import { Activator, nativeToolName, type ActivationConfig } from './activation.js'
 import { ToggleStore } from './toggles.js'
 import { CatalogRemote, type CatalogRemoteApi } from './remote.js'
 import type { FamilyRule } from './families.js'
@@ -91,6 +92,11 @@ const ConfigSchema = z.object({
     callResultMaxChars: z.number().min(1000).default(120_000),
   }).default({}),
   cacheDir: z.string().description('Catalog cache directory; defaults to $DSH_HOME/capability-catalog.'),
+  activation: z.object({
+    mode: z.union([z.const('off'), z.const('auto'), z.const('native')]).default('off').description('Native activation: a described MCP tool is also registered on that session as an ordinary tool, called directly from the next step. auto: only on routes that accept mid-conversation tool additions (deepseek-flash), so the prompt cache survives; native: on every route.'),
+    maxActive: z.number().min(1).default(32).description('Most natively activated tools per session.'),
+    maxSchemaBytes: z.number().min(0).default(0).description('Schemas above this many bytes stay behind capability_call; 0 means no limit.'),
+  }).default({}),
 })
 
 /** Plugin configuration schema (`config` of the `capability-catalog` row). */
@@ -105,6 +111,7 @@ export interface ResolvedConfig {
   toolNames: { search: string; describe: string; call: string }
   limits: ToolLimits
   cacheDir?: string
+  activation?: ActivationConfig
 }
 
 function dshHome(): string {
@@ -206,7 +213,70 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     catalog.add(skillSource)
   }
 
-  const tools = createTools(skillsService, catalog, names, config.limits, viewOf)
+  let activator: Activator | undefined
+  const tools = createTools(skillsService, catalog, names, config.limits, viewOf, {
+    onDescribed: (entry, exec) => activator?.activate(entry, exec),
+  })
+  const activation: ActivationConfig = config.activation ?? { mode: 'off', maxActive: 32, maxSchemaBytes: 0 }
+  // auto mode: whether each agent's current route declares `toolUpdate`, resolved per step.
+  const llm = ctx.get('llm') as { resolveModelInfo?(provider: string, model: string, signal?: AbortSignal): Promise<{ toolUpdate?: string }> } | undefined
+  const routeCapability = new Map<string, Promise<boolean>>()
+  const routeAllows = new Map<string, boolean>()
+  const supportsToolUpdate = (provider: string, model: string): Promise<boolean> => {
+    const key = `${provider}\u0000${model}`
+    let known = routeCapability.get(key)
+    if (known === undefined) {
+      known = (llm?.resolveModelInfo?.(provider, model) ?? Promise.resolve<{ toolUpdate?: string }>({})).then((info) => info.toolUpdate !== undefined, () => false)
+      routeCapability.set(key, known)
+    }
+    return known
+  }
+  const routeOf = (agent: HarnessAgent) => {
+    const selected = agent.model?.current?.()
+    if (selected !== undefined) return selected
+    const config = agent.session?.requestHeader?.()?.config
+    return config?.provider !== undefined && config.model !== undefined ? { provider: config.provider, model: config.model } : undefined
+  }
+  const learnRoute = async (agent: HarnessAgent, route = routeOf(agent)) => {
+    if (route !== undefined) routeAllows.set(agent.id, await supportsToolUpdate(route.provider, route.model))
+  }
+  /** Map a native name back to its enabled catalog entry for this agent. */
+  const resolveNative = (name: string, sessionId: string) => {
+    for (const source of catalog.list()) {
+      if (!source.key.startsWith('mcp:')) continue
+      for (const entry of source.entries({ sessionId })) {
+        if (entry.kind !== 'tool' || nativeToolName(entry) !== name) continue
+        const found = catalog.find(entry.id, { sessionId })
+        return found !== undefined && !('ambiguous' in found) ? found : undefined
+      }
+    }
+    return undefined
+  }
+  /** Restore the native tools a session declared in its last request, before its next step. */
+  const restoreNative = async (agent: HarnessAgent) => {
+    if (activator === undefined) return
+    await learnRoute(agent)
+    const declared = agent.session?.requestHeader?.()?.tools?.map((tool) => tool.name).filter((name) => name.startsWith('mcp__')) ?? []
+    if (declared.length === 0) return
+    const restored = activator.restore(agent, declared, (name) => resolveNative(name, agent.id))
+    if (restored.length > 0) logger.info(`capability-catalog: restored ${restored.length} native tools for ${agent.id}`)
+  }
+  if (activation.mode !== 'off') {
+    activator = new Activator(activation, tools.run, names.call, (message, error) => logger.warn(message, error), (agent) => routeAllows.get(agent.id) === true)
+    ctx.effect(() => () => {
+      activator?.dispose()
+      activator = undefined
+    }, 'capability-catalog.native-activation')
+    // Switching a server or the whole catalog off for a session releases its native tools.
+    ctx.effect(() => toggles.onChange(() => activator?.prune((id, agentId) => {
+      const found = catalog.find(id, { sessionId: agentId })
+      return found !== undefined && !('ambiguous' in found)
+    })), 'capability-catalog.native-prune')
+    ctx.on('agent/pre-step', async (payload: { agent: HarnessAgent; modelSelection?: { provider: string; model: string } }, next: () => Promise<unknown>) => {
+      await learnRoute(payload.agent, payload.modelSelection ?? routeOf(payload.agent)).catch(() => undefined)
+      return next()
+    })
+  }
   ctx.tools.register(tools.search)
   ctx.tools.register(tools.describe)
   ctx.tools.register(tools.call)
@@ -219,7 +289,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     interpolate: false,
     text: (context) => {
       const agent = context.scope as HarnessAgent | undefined
-      return catalog.renderIndex(agent ? { scope: agent, sessionId: agent.id } : {}, names, skillTakeover)
+      return catalog.renderIndex(agent ? { scope: agent, sessionId: agent.id } : {}, names, skillTakeover, activator !== undefined && (activation.mode === 'native' || (agent !== undefined && routeAllows.get(agent.id) === true)))
     },
   })
 
@@ -233,6 +303,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     } catch (error) {
       if (!effective.aborted) logger.warn('capability-catalog: agent refresh failed', error)
     }
+    await restoreNative(agent).catch((error: unknown) => logger.warn('capability-catalog: restoring native tools failed', error))
   })
 
   // Refresh per-agent state (skills depend on scope and working directory) before each step.
@@ -279,6 +350,12 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     }
   }
 
+  // A reload finds live sessions that already hold native tools; keep them declared.
+  if (activator !== undefined) {
+    const live = ctx.get('agents') as { list(): HarnessAgent[] } | undefined
+    for (const agent of live?.list() ?? []) void restoreNative(agent).catch(() => undefined)
+  }
+
   // Settings page and per-session controls.
   const agents = ctx.get('agents') as { get(id: string): HarnessAgent | undefined } | undefined
   const api: CatalogRemoteApi = {
@@ -286,6 +363,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
       const agent = sessionId === undefined ? undefined : agents?.get(sessionId)
       const view: ViewContext = agent ? await viewFor(agent, signal) : sessionId ? { sessionId } : {}
       if (agent) await catalog.refresh(view, signal).catch(() => undefined)
+      if (agent && activator !== undefined && !routeAllows.has(agent.id)) await learnRoute(agent).catch(() => undefined)
       const sessionLayer = toggles.session(sessionId)
       return {
         enabled: true,
@@ -311,9 +389,19 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
           effective: toggles.enabled('skill', entry.name, sessionId),
         })),
         indexChars: catalog.renderIndex(view, names, skillTakeover).length,
+        activation: {
+          mode: activation.mode,
+          applies: agent !== undefined && activator?.applies(agent) === true,
+          active: sessionId === undefined ? [] : (activator?.list(sessionId) ?? []).map(({ name, id }) => ({ name, id })),
+        },
       }
     },
     async set(request) {
+      if (request.kind === 'native') {
+        if (request.sessionId === undefined) throw new Error('Releasing a native tool needs a sessionId.')
+        activator?.release(request.sessionId, request.name === '*' ? undefined : request.name)
+        return
+      }
       await toggles.set(request.scope === 'global' ? 'global' : { sessionId: request.sessionId! }, request.kind, request.name, request.value)
     },
   }

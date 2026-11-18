@@ -19,7 +19,7 @@ export const catalogRequestSchema = z.discriminatedUnion('action', [
     action: z.literal('set'),
     scope: z.enum(['global', 'session']),
     sessionId: z.string().min(1).max(200).optional(),
-    kind: z.enum(['server', 'skill']),
+    kind: z.enum(['server', 'skill', 'native']),
     name: z.string().min(1).max(200),
     value: z.boolean().nullable(),
   }),
@@ -51,6 +51,12 @@ export const catalogOverviewSchema = z.object({
     effective: z.boolean(),
   })),
   indexChars: z.number(),
+  activation: z.object({
+    mode: z.enum(['off', 'native', 'auto']),
+    /** Whether the session's current route receives native tools. */
+    applies: z.boolean(),
+    active: z.array(z.object({ name: z.string(), id: z.string() })),
+  }).optional(),
 })
 
 export type CatalogRequest = z.infer<typeof catalogRequestSchema>

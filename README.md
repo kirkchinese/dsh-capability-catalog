@@ -60,7 +60,8 @@ flowchart LR
 2. **三个固定工具**：`capability_search` 检索（BM25，拆分 snake_case，中文二元组）或按族浏览；`capability_describe` 给出完整说明和参数——超过 6 KB 的 schema 先给紧凑签名，折叠处标出 JSON Pointer，用 `path` 展开；`capability_call` 用原始 schema 校验参数，错误带字段路径，再转发给 MCP。
 3. **工具列表从不变化**：不依赖会话中途追加工具，也就避开了 DeepSeek 端点上的 400 问题。
 4. **MCP 按需运行**：工具清单缓存在磁盘上，启动 DSH 时不拉起服务器；只有 `capability_call` 才连接；空闲 5 分钟自动断开。
-5. **接管 skill 目录**：原生 skill 目录不再逐会话发送全部描述，改为在索引里按族列出名称和短描述；`skill` 工具与 `/name` 用法不变。
+5. **原生激活（可选，0.2.0 起）**：设 `activation.mode: auto` 后，模型 describe 过的工具会在当前会话里变成普通工具 `mcp__<server>__<tool>`，下一步起直接按精确 schema 调用；在 `deepseek-flash` 上通过 DSH 0.2.2 的 `tool_addition` 追加，前缀缓存不断。详见[插件说明](packages/capability-catalog/README.md#原生激活activation)。
+6. **接管 skill 目录**：原生 skill 目录不再逐会话发送全部描述，改为在索引里按族列出名称和短描述；`skill` 工具与 `/name` 用法不变。
 
 ## 亮点
 
@@ -69,7 +70,8 @@ flowchart LR
 | 🗂️ **一个目录，多种来源** | MCP 工具与 skill 共用一套索引、检索与开关；后续可接入插件工具、subagent preset |
 | 🎚️ **细到会话的开关** | 每个 MCP 服务器、每个 skill 都能单独开关；全局一层、会话一层，会话优先 |
 | 🧭 **知道有什么** | 索引按能力族组织，人工整理的族带一句说明；服务器在 `_meta` 中声明的 `family` 会被直接采用 |
-| 🔍 **超大 schema 可切片** | 166 KB 的单个 schema 先给约 8 KB 的签名，再按 JSON Pointer 展开某一支 |
+| 🔍 **超大 schema 可切片** | 166 KB 的单个 schema 先给约 8 KB 的签名，再按 JSON Pointer 展开某一支；多分支参数每个分支一行列全 |
+| ⚡ **原生激活（可选）** | describe 过的工具在本会话变成普通工具直接调用；flash 上不断缓存，同一 REA 任务步数约 25 → 12 |
 | ✅ **调用前校验** | 用原始 schema（Ajv，JSON Schema 2020-12）校验，错误带路径，模型可自行修正 |
 | 💤 **按需启动、空闲断开** | 磁盘缓存工具清单；握手超时会清理子进程；子进程环境沿用 DSH 的凭据清洗 |
 | 🧊 **缓存友好** | 工具数组整场会话不变，索引只随目录内容变化 |
@@ -174,7 +176,8 @@ dsh plugin --profile web add @kirkchinese/dsh-capability-catalog
 ## 路线图
 
 - [x] MCP 与 skill 两种来源、统一索引、全局/会话开关、设置界面
-- [ ] **原生延迟加载模式**：DeepSeek 官方端点已实测支持 `defer_loading` 工具与工具结果中的 `tool_reference`（延迟工具不计输入 token，模型可直接原生调用）。等 DSH 适配器支持后启用，提案见 [deepseek-harness#10812](https://github.com/deepseek-ai/deepseek-harness/discussions/10812)
+- [x] 原生激活（0.2.0）：describe 过的工具在会话中注册为普通工具，借 DSH 0.2.2 的 `tool_addition` 追加
+- [ ] **一次检索直接激活**：DeepSeek 官方端点已实测支持 `defer_loading` 工具与工具结果中的 `tool_reference`（延迟工具不计输入 token，模型可直接原生调用）。等 DSH 适配器支持后启用，提案见 [deepseek-harness#10812](https://github.com/deepseek-ai/deepseek-harness/discussions/10812)
 - [ ] REA 在 `tools/list` 中声明能力族后弃用 `dsh-rea` 的人工规则，提案见 [morluto/rea#6870](https://github.com/morluto/rea/issues/6870)
 - [ ] 接入更多来源：插件工具、subagent preset
 - [ ] 可选的混合检索（关键词 + 向量）

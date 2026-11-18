@@ -12,11 +12,29 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
 | 工具 | 作用 |
 | --- | --- |
 | `capability_search` | 关键词检索（BM25，拆分 snake_case），或用 `family` 浏览一族；可按 `source`、`kind` 过滤 |
-| `capability_describe` | 完整说明与参数。schema 不超过 `schemaInlineMaxBytes` 时原样返回，否则返回紧凑签名，折叠处标出 JSON Pointer，用 `path` 展开 |
+| `capability_describe` | 完整说明与参数。schema 不超过 `schemaInlineMaxBytes` 时原样返回，否则返回紧凑签名，折叠处标出 JSON Pointer，用 `path` 展开。带判别字段的多分支参数（oneOf/anyOf）每个分支一行，列出判别值与字段 |
 | `capability_call` | 用原始 schema 校验参数（错误带字段路径），再调用 MCP |
 | `skill`（接管时） | 按名称加载 skill，输出与原生 `skill` 工具一致 |
 
-工具列表在会话中不变；索引只随目录内容变化，同一配置下逐字节稳定。
+未开启原生激活时，工具列表在会话中不变；索引只随目录内容变化，同一配置下逐字节稳定。
+
+## 原生激活（`activation`）
+
+模型用 `capability_describe` 查看过的 MCP 工具，会在**当前会话**里同时注册为普通工具 `mcp__<server>__<tool>`（与 DSH 官方 MCP 客户端同名规则），下一步起模型直接按精确 schema 调用；执行仍经过本插件的开关、参数校验和按需启动。DSH 会把新工具记为 `tool-addition`：声明了 `toolUpdate` 的模型（内置的 `deepseek-flash`）把它作为延迟声明加 `tool_addition` 追加在历史之后，前缀缓存不断；未声明的模型（如 `deepseek-v4-pro`）每激活一次，前缀缓存失效一次。
+
+| `mode` | 行为 |
+| --- | --- |
+| `off`（默认） | 不激活，只用三个固定工具 |
+| `auto` | 只在当前模型声明了 `toolUpdate` 时激活（推荐） |
+| `native` | 所有模型都激活 |
+
+- `maxActive`（默认 32）：每个会话最多同时持有的原生工具数。
+- `maxSchemaBytes`（默认 0，不限）：超过此大小的 schema 继续走 `capability_call`。激活一个大 schema 的代价是它进入上下文：REA 最大的 `compare_web_captures`（约 160 KB）首次约 4.9 万输入 token，之后走缓存。
+- 会话或全局关掉某服务器、或插件总开关关闭时，已激活的工具随即注销。
+- 主机重启、插件更新后，按会话最近一次请求的工具列表恢复激活，DSH 不会记录移除，缓存不断。
+- 「能力」弹窗列出本会话已加载的原生工具，可单个或全部释放。
+
+实测（DSH 0.2.2-rc.3，DeepSeek 官方 API，`deepseek-flash`，同一 REA 任务）：激活后 25 KB 的 `inspect_analysis_view` 被直接调用 9 次、无需逐分支展开，总步数由约 25 降到 12。
 
 ## 配置
 
@@ -54,6 +72,10 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
     toolNames: { search: capability_search, describe: capability_describe, call: capability_call }
     limits: { searchLimit: 8, maxSearchLimit: 60, schemaInlineMaxBytes: 6000, describeMaxChars: 14000, callResultMaxChars: 120000 }
     cacheDir: ''                  # 默认 $DSH_HOME/capability-catalog
+    activation:                   # 原生激活，见上文
+      mode: off                   # off / auto / native
+      maxActive: 32
+      maxSchemaBytes: 0           # 0 表示不限
 ```
 
 覆盖这一行时会替换整个 `config`，请写全自己要保留的字段。
@@ -80,11 +102,12 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
 - **缓存：** 工具清单写入 `cacheDir/mcp-<name>.json`，键为命令、参数、环境、URL 的哈希。有缓存时启动不连接服务器；启动时的首次发现结束后立即断开。
 - **连接：** 检索与说明只读缓存，只有 `capability_call` 会连接服务器；空闲 `idleDisconnectMs` 后断开；插件卸载或关闭时立即断开。
 - **skill 接管：** 为每个 agent 注册同名的作用域 `skill` 工具，原生目录因此停止发送；`/name` 手势由原生插件继续处理。
-- **安全：** 子进程环境沿用 DSH 的凭据清洗；本插件不提升任何权限。`capability_call` 是普通工具，照常经过 DSH 的审批流程，但审批粒度是这一个工具名，而不是每个 MCP 工具。
+- **安全：** 子进程环境沿用 DSH 的凭据清洗；本插件不提升任何权限。`capability_call` 是普通工具，照常经过 DSH 的审批流程，但审批粒度是这一个工具名；开启原生激活后，激活的工具按各自的 `mcp__<server>__<tool>` 名称审批。
 
 ## 已知限制
 
 - 中文查询与英文工具描述之间没有语义匹配；索引用英文族名，模型通常用英文检索。
 - 多一步检索与说明；对每轮都要用到的少数工具，直接注册更简单。
 - MCP 结果中的图片、音频以文字占位，不进入模型上下文。
-- 原生延迟加载（`defer_loading` + `tool_reference`）需要 DSH DeepSeek 适配器支持，见仓库 `docs/upstream/`。
+- 原生激活由 describe 触发；模型凭名称猜测未 describe 过的 `mcp__…` 工具会得到「未知工具」，再按索引走检索。
+- 工具结果中的 `tool_reference`（一次检索直接激活）仍需 DSH 适配器支持，见仓库 `docs/upstream/`。

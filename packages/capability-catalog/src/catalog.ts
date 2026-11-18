@@ -140,7 +140,7 @@ export class Catalog {
    * @param skillTakeover - whether skills load through the replacement `skill` tool.
    * @returns prompt text, or an empty string when there is nothing to index.
    */
-  renderIndex(view: ViewContext, names: MetaToolNames, skillTakeover: boolean): string {
+  renderIndex(view: ViewContext, names: MetaToolNames, skillTakeover: boolean, nativeNote = false): string {
     const blocks = this.indexes(view)
     if (blocks.length === 0) return ''
     const lines: string[] = [
@@ -154,6 +154,9 @@ export class Catalog {
             ' This catalog replaces the separate skill list: a reminder saying that no skills are available refers to that old list, not to the skills below.'
           : ''),
       'When a task matches a family below, search before concluding that no tool exists.',
+      ...nativeNote
+        ? [`After you describe an MCP tool with \`${names.describe}\`, it is also loaded as a native tool named \`mcp__<server>__<tool>\`: from the next step call that tool directly instead of \`${names.call}\`. Tools you have not described are not loaded natively.`]
+        : [],
     ]
     for (const block of blocks) {
       lines.push('')

@@ -67,6 +67,11 @@ window.__ModuleLoader__.load({
         offCount: '{n} 项已关闭',
         close: '关闭',
         error: '出错了：{message}',
+        nativeTitle: '已加载为原生工具',
+        nativeNote: '模型查看过的 MCP 工具会加载为原生工具，可被直接调用。释放后从下一步起恢复为通过能力目录调用。',
+        nativeRelease: '释放',
+        nativeReleaseAll: '全部释放',
+        nativeInactive: '当前模型不支持中途追加工具，本会话不加载原生工具（auto 模式）。',
       },
       en: {
         title: 'Capability Catalog',
@@ -101,6 +106,11 @@ window.__ModuleLoader__.load({
         offCount: '{n} off',
         close: 'Close',
         error: 'Something went wrong: {message}',
+        nativeTitle: 'Loaded as native tools',
+        nativeNote: 'MCP tools the model described are loaded as native tools it calls directly. Releasing one returns it to catalog calls from the next step.',
+        nativeRelease: 'Release',
+        nativeReleaseAll: 'Release all',
+        nativeInactive: 'The current model does not accept mid-conversation tool additions, so this session loads no native tools (auto mode).',
       },
     }
 
@@ -433,13 +443,23 @@ window.__ModuleLoader__.load({
                   h('div', { className: 'cc-row-name' }, server.title),
                   h('div', { className: 'cc-row-desc' }, format(t.tools, { n: server.tools }))),
                 h(Segmented, { t, label: server.title, value: server.session, onChange: (value) => change('server', server.name, value) })))) : null,
+            data.activation && data.activation.mode !== 'off' ? h('div', null,
+              h('div', { className: 'cc-sub' }, `${t.nativeTitle} (${data.activation.active.length})`,
+                data.activation.active.length > 1 ? h('button', { type: 'button', className: 'cc-btn', style: { marginLeft: 8 }, onClick: () => change('native', '*', false) }, t.nativeReleaseAll) : null),
+              !data.activation.applies && data.activation.mode === 'auto' ? h('div', { className: 'cc-note' }, t.nativeInactive)
+                : data.activation.active.length === 0 ? h('div', { className: 'cc-note' }, t.nativeNote)
+                : data.activation.active.map((tool) => h('div', { className: 'cc-mini-row', key: tool.name },
+                  h('div', { className: 'cc-row-main' },
+                    h('div', { className: 'cc-row-name', title: tool.id }, tool.name)),
+                  h('button', { type: 'button', className: 'cc-btn', onClick: () => change('native', tool.name, false) }, t.nativeRelease)))) : null,
             data.skills.length > 0 ? h('div', null,
               h('div', { className: 'cc-sub' }, `${t.skills} (${data.skills.filter((skill) => skill.effective).length}/${data.skills.length})`),
               h('input', { className: 'cc-input', type: 'search', placeholder: t.search, value: query, onChange: (event) => setQuery(event.target.value), 'aria-label': t.search, style: { width: '100%', marginBottom: 6 } }),
               skills.map((skill) => h('div', { className: 'cc-mini-row', key: skill.name },
                 h('div', { className: 'cc-row-main' },
                   h('div', { className: 'cc-row-name', title: skill.summary }, skill.name, skill.effective ? null : h('span', { className: 'cc-row-desc' }, `  · ${t.stateOff}`))),
-                h(Segmented, { t, label: skill.name, value: skill.session, onChange: (value) => change('skill', skill.name, value) })))) : null)) : null)
+                h(Segmented, { t, label: skill.name, value: skill.session, onChange: (value) => change('skill', skill.name, value) })))) : null,
+)) : null)
     }
 
     // ---------------------------------------------------------------- plugin
