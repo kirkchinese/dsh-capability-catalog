@@ -7,7 +7,7 @@
 **Let DeepSeek Harness know which tools and skills exist,<br>without sending every definition on every request.**
 
 [![npm](https://img.shields.io/npm/v/@kirkchinese/dsh-capability-catalog?color=4d6bfe&label=npm)](https://www.npmjs.com/package/@kirkchinese/dsh-capability-catalog)
-[![DSH](https://img.shields.io/badge/DSH-0.2.1--rc.2%20%7C%20rc.3-4d6bfe)](https://github.com/deepseek-ai/deepseek-harness)
+[![DSH](https://img.shields.io/badge/DSH-0.2.1%20%7C%200.2.2-4d6bfe)](https://github.com/deepseek-ai/deepseek-harness)
 [![Node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933?logo=nodedotjs&logoColor=white)](#install)
 [![License](https://img.shields.io/badge/license-MIT-f4c430)](LICENSE)
 
@@ -94,7 +94,7 @@ Precedence: **session › global › configuration default**. A switched-off cap
 
 ## Install
 
-Requires DSH `>=0.2.1-rc.2 <0.2.2-0` (all 0.2.1 RCs and the stable release; 0.2.2 prereleases excluded), Node.js `^22.19.0 || >=24.0.0`.
+Requires DSH `>=0.2.1-rc.2 <0.2.3-0` (all 0.2.1 and 0.2.2 prereleases and releases; 0.2.3 prereleases excluded), Node.js `^22.19.0 || >=24.0.0`.
 
 **Kit** (catalog + REA in one step):
 

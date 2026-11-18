@@ -300,15 +300,15 @@ test('every pointer in every REA signature resolves, at every depth', () => {
   assert.deepEqual(failures.slice(0, 10), [])
 })
 
-test('manifest covers the 0.2.1 line without admitting 0.2.2 prereleases', () => {
+test('manifest covers the 0.2.1 and 0.2.2 lines without admitting 0.2.3 prereleases', () => {
   const manifest = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
   const range = manifest.engines.dsh
-  assert.equal(range, '>=0.2.1-rc.2 <0.2.2-0')
+  assert.equal(range, '>=0.2.1-rc.2 <0.2.3-0')
   for (const name of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-typert-protocol']) assert.equal(manifest.peerDependencies[name], range)
-  for (const version of ['0.2.1-rc.2', '0.2.1-rc.3', '0.2.1-rc.4', '0.2.1-rc.5', '0.2.1-rc.99', '0.2.1']) {
+  for (const version of ['0.2.1-rc.2', '0.2.1-rc.5', '0.2.1', '0.2.2-alpha.3', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2']) {
     assert.ok(semver.satisfies(version, range, { includePrerelease: true }), `${version} must be admitted`)
   }
-  for (const version of ['0.2.2-alpha.1', '0.2.2', '0.3.0-alpha.1']) {
+  for (const version of ['0.2.1-rc.1', '0.2.3-alpha.1', '0.2.3', '0.3.0-alpha.1']) {
     assert.equal(semver.satisfies(version, range, { includePrerelease: true }), false, `${version} must not be admitted`)
   }
 })

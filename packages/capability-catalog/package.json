@@ -1,6 +1,6 @@
 {
   "name": "@kirkchinese/dsh-capability-catalog",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Lazy capability catalog for DeepSeek Harness: one compact index plus search/describe/call meta-tools for MCP tools and skills, instead of every schema on every request",
   "keywords": [
     "deepseek-harness",
@@ -17,7 +17,7 @@
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2 <0.2.2-0"
+    "dsh": ">=0.2.1-rc.2 <0.2.3-0"
   },
   "exports": {
     ".": {
@@ -75,19 +75,19 @@
     "ajv": "8.20.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "4.0.4 || 4.0.5",
-    "@deepseek-ai/schemastery": "3.18.4 || 3.18.5",
-    "@deepseek-ai/dsh-subprocess": ">=0.2.1-rc.2 <0.2.2-0",
-    "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-rc.2 <0.2.2-0",
+    "@deepseek-ai/cordis": ">=4.0.4 <5",
+    "@deepseek-ai/schemastery": ">=3.18.4 <4",
+    "@deepseek-ai/dsh-subprocess": ">=0.2.1-rc.2 <0.2.3-0",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.2.1-rc.2 <0.2.3-0",
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/schemastery": "3.18.5",
-    "@deepseek-ai/dsh-subprocess": "0.2.1-rc.5",
+    "@deepseek-ai/cordis": "4.1.0",
+    "@deepseek-ai/schemastery": "3.19.0",
+    "@deepseek-ai/dsh-subprocess": "0.2.2-rc.3",
     "@types/node": "^24.10.0",
     "typescript": "^5.9.3",
-    "@deepseek-ai/dsh-typert-protocol": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-typert-protocol": "0.2.2-rc.3",
     "zod": "4.4.3",
     "semver": "7.8.5"
   },
