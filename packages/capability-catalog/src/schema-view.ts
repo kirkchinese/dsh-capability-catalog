@@ -94,6 +94,13 @@ function typeOf(schema: JsonSchema, pointer: string, depth: number, options: Com
   for (const key of ['oneOf', 'anyOf'] as const) {
     const branches = schema[key]
     if (Array.isArray(branches)) {
+      // Object alternatives told apart by one constant field: list each branch on its own line,
+      // so the model picks the right one without expanding every pointer.
+      const listed = branchLines(branches, `${pointer}/${key}`, options, `${indent}  `)
+      if (listed !== undefined) {
+        lines.push(...listed.lines)
+        return `${key}<${listed.lines.length}> by ${listed.discriminator} → ${pointer}/${key}`
+      }
       if (branches.length > 4 || depth <= 0) return `${key}<${branches.length} branches> → ${pointer}/${key}`
       return branches
         .map((branch, i) => {
@@ -131,6 +138,57 @@ function typeOf(schema: JsonSchema, pointer: string, depth: number, options: Com
     return '{'
   }
   return typeof type === 'string' ? type : 'unknown'
+}
+
+/** The constant value of a discriminator property, when it has exactly one. */
+function constantOf(node: JsonSchema | undefined): unknown {
+  if (node === undefined) return undefined
+  if ('const' in node) return node.const
+  if (Array.isArray(node.enum) && node.enum.length === 1) return node.enum[0]
+  return undefined
+}
+
+/**
+ * One line per branch of a discriminated union of objects, or undefined when the branches are
+ * not objects sharing a constant-valued property with distinct values.
+ */
+function branchLines(branches: unknown[], pointer: string, options: CompactOptions, indent: string): { discriminator: string; lines: string[] } | undefined {
+  // Nested unions of the same shape are flattened, keeping each branch's exact pointer.
+  const flat: Array<{ node: JsonSchema; pointer: string }> = []
+  const collect = (list: unknown[], base: string, level: number): boolean => {
+    for (const [i, raw] of list.entries()) {
+      const node = asSchema(raw)
+      if (node === undefined) return false
+      const nested = Array.isArray(node.oneOf) ? ['oneOf', node.oneOf] as const : Array.isArray(node.anyOf) ? ['anyOf', node.anyOf] as const : undefined
+      if (nested !== undefined && node.properties === undefined) {
+        if (level >= 3 || !collect(nested[1], `${base}/${i}/${nested[0]}`, level + 1)) return false
+        continue
+      }
+      if (asSchema(node.properties) === undefined) return false
+      flat.push({ node, pointer: `${base}/${i}` })
+    }
+    return true
+  }
+  if (branches.length < 2 || !collect(branches, pointer, 0) || flat.length > 40) return undefined
+  const first = asSchema(flat[0]!.node.properties)!
+  const discriminator = Object.keys(first).find((key) => {
+    const values = flat.map(({ node }) => constantOf(asSchema(asSchema(node.properties)![key])))
+    return values.every((value) => value !== undefined) && new Set(values.map((value) => JSON.stringify(value))).size >= 2
+  })
+  if (discriminator === undefined) return undefined
+  const lines = flat.map(({ node, pointer: branchPointer }) => {
+    const properties = asSchema(node.properties)!
+    const required = new Set(Array.isArray(node.required) ? node.required as string[] : [])
+    const others = Object.keys(properties).filter((key) => key !== discriminator)
+    const fieldsText = others.length === 0 ? '{}' : `{${others.map((key) => {
+      const own = constantOf(asSchema(properties[key]))
+      return `${key}${required.has(key) ? '' : '?'}${own === undefined ? '' : `=${literal(own)}`}`
+    }).join(', ')}}`
+    const value = literal(constantOf(asSchema(properties[discriminator])))
+    const description = typeof node.description === 'string' ? `  // ${shorten(node.description, options.maxDescription)}` : ''
+    return `${indent}| ${discriminator}: ${value} ${fieldsText} → ${branchPointer}${description}`
+  })
+  return { discriminator, lines }
 }
 
 function wrap(text: string): string {

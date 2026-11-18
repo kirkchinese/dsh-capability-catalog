@@ -313,28 +313,60 @@ test('manifest covers the 0.2.1 and 0.2.2 lines without admitting 0.2.3 prerelea
   }
 })
 
-test('native activation registers a described tool once per agent and runs it through the catalog', async () => {
+test('native activation registers, restores, prunes and releases tools per agent', async () => {
   const { Activator, nativeToolName } = await import('../lib/activation.js')
   const registered = new Map()
   const agentCtx = {
     effect(fn) { const cleanup = fn(); return () => cleanup() },
     tools: { register(def) { registered.set(def.name, def); return () => registered.delete(def.name) } },
   }
-  const exec = { callId: 'c1', name: 'capability_describe', arguments: {}, agent: { id: 'session-a', ctx: agentCtx }, signal: AbortSignal.timeout(5000) }
+  const agent = { id: 'session-a', ctx: agentCtx }
+  const exec = { callId: 'c1', name: 'capability_describe', arguments: {}, agent, signal: AbortSignal.timeout(5000) }
   const ran = []
-  const activator = new Activator({ mode: 'native', maxActive: 2, maxSchemaBytes: 1000 }, async (id, args) => { ran.push([id, args]); return { text: 'ok' } }, 'capability_call', () => {})
+  const run = async (id, args) => { ran.push([id, args]); return { text: 'ok' } }
   const entry = (name, bytes = 100) => ({ id: `mcp:rea/${name}`, kind: 'tool', source: 'mcp:rea', name, family: 'x', summary: '', description: 'd', inputSchema: { type: 'object' }, schemaBytes: bytes })
+  const activator = new Activator({ mode: 'native', maxActive: 3, maxSchemaBytes: 0 }, run, 'capability_call', () => {})
   assert.equal(nativeToolName(entry('list_unknowns')), 'mcp__rea__list_unknowns')
   assert.match(activator.activate(entry('list_unknowns'), exec), /Loaded as the native tool `mcp__rea__list_unknowns`/u)
   assert.match(activator.activate(entry('list_unknowns'), exec), /also available/u)
-  assert.equal(registered.size, 1)
   assert.deepEqual(await registered.get('mcp__rea__list_unknowns').execute({ a: 1 }, exec), { text: 'ok' })
   assert.deepEqual(ran, [['mcp:rea/list_unknowns', { a: 1 }]])
-  assert.match(activator.activate(entry('huge', 5000), exec), /too large/u)
-  activator.activate(entry('second'), exec)
-  assert.match(activator.activate(entry('third'), exec), /configured maximum/u)
+  // No size limit by default.
+  assert.match(activator.activate(entry('huge', 200_000), exec), /Loaded as the native tool/u)
+  activator.activate(entry('third'), exec)
+  assert.match(activator.activate(entry('fourth'), exec), /configured maximum/u)
+  assert.deepEqual(activator.list('session-a').map((tool) => tool.name).sort(), ['mcp__rea__huge', 'mcp__rea__list_unknowns', 'mcp__rea__third'])
+  // Switching a capability off releases it.
+  activator.prune((id) => id !== 'mcp:rea/huge')
+  assert.equal(registered.has('mcp__rea__huge'), false)
+  activator.release('session-a', 'mcp__rea__third')
+  assert.deepEqual([...registered.keys()], ['mcp__rea__list_unknowns'])
   activator.dispose()
   assert.equal(registered.size, 0)
-  const off = new Activator({ mode: 'off', maxActive: 2, maxSchemaBytes: 1000 }, async () => ({ text: '' }), 'capability_call', () => {})
+  // Restore after a restart, skipping names the catalog no longer resolves.
+  const restored = new Activator({ mode: 'native', maxActive: 3, maxSchemaBytes: 0 }, run, 'capability_call', () => {})
+  const names = restored.restore(agent, ['mcp__rea__list_unknowns', 'mcp__rea__gone'], (name) => name === 'mcp__rea__list_unknowns' ? entry('list_unknowns') : undefined)
+  assert.deepEqual(names, ['mcp__rea__list_unknowns'])
+  assert.ok(registered.has('mcp__rea__list_unknowns'))
+  restored.dispose()
+  // A size limit, when configured, keeps large schemas behind the meta call.
+  const limited = new Activator({ mode: 'native', maxActive: 3, maxSchemaBytes: 1000 }, run, 'capability_call', () => {})
+  assert.match(limited.activate(entry('huge', 5000), exec), /too large/u)
+  // auto mode follows the route; off never activates.
+  let allows = false
+  const auto = new Activator({ mode: 'auto', maxActive: 3, maxSchemaBytes: 0 }, run, 'capability_call', () => {}, () => allows)
+  assert.equal(auto.activate(entry('list_unknowns'), exec), undefined)
+  allows = true
+  assert.match(auto.activate(entry('list_unknowns'), exec), /Loaded/u)
+  auto.dispose()
+  const off = new Activator({ mode: 'off', maxActive: 3, maxSchemaBytes: 0 }, run, 'capability_call', () => {})
   assert.equal(off.activate(entry('list_unknowns'), exec), undefined)
+})
+
+test('describe lists the branches of a discriminated union on one line each', () => {
+  const tool = reaTools.find((candidate) => candidate.name === 'inspect_analysis_view')
+  const signature = compactSignature(tool.name, tool.inputSchema, '', { maxDepth: 2 })
+  assert.match(signature, /view: oneOf<31> by kind → \/properties\/view\/oneOf/u)
+  assert.match(signature, /\| kind: "page" \{collection, offset, limit\} → \/properties\/view\/oneOf\/3/u)
+  assert.match(signature, /\| kind: "qlog" \{offset\?, limit\?, trace_index, facet="streams"\} → \/properties\/view\/oneOf\/17\/oneOf\/1/u)
 })

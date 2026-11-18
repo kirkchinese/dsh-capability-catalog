@@ -60,7 +60,8 @@ flowchart LR
 2. **Three fixed tools.** `capability_search` ranks entries (BM25, snake_case splitting, CJK bigrams) or browses one family; `capability_describe` returns the description and parameters — schemas over 6 KB come back as a compact signature whose collapsed parts name a JSON Pointer that `path` expands; `capability_call` validates arguments against the raw schema with field paths in the error, then forwards to MCP.
 3. **The tool array never changes.** No mid-conversation tool additions, so the endpoint's 400 failure never applies.
 4. **MCP on demand.** Tool lists are cached on disk, so Harness startup does not launch servers; only `capability_call` connects; idle connections close after 5 minutes.
-5. **Skill catalog takeover.** The native catalog no longer repeats every description per session; the index lists names and briefs by family. The `skill` tool and `/name` keep working.
+5. **Native activation (optional, since 0.2.0).** With `activation.mode: auto`, a tool the model has described becomes an ordinary tool `mcp__<server>__<tool>` in that session and is called directly with its exact schema from the next step; on `deepseek-flash` it arrives through DSH 0.2.2's `tool_addition`, so the prompt cache holds. See the [plugin README](packages/capability-catalog/README.md).
+6. **Skill catalog takeover.** The native catalog no longer repeats every description per session; the index lists names and briefs by family. The `skill` tool and `/name` keep working.
 
 ## Highlights
 
@@ -69,7 +70,8 @@ flowchart LR
 | 🗂️ **One catalog, many sources** | MCP tools and skills share one index, search and switch set; plugin tools and subagent presets can follow |
 | 🎚️ **Per-session switches** | Every MCP server and every skill can be switched globally and per session; the session wins |
 | 🧭 **Knows what exists** | The index is organized by family, curated families carry a one-line description, and a `family` declared in tool `_meta` is used directly |
-| 🔍 **Sliceable large schemas** | A 166 KB schema starts as an ~8 KB signature; expand one branch by JSON Pointer |
+| 🔍 **Sliceable large schemas** | A 166 KB schema starts as an ~8 KB signature; expand one branch by JSON Pointer; union parameters list every branch on one line each |
+| ⚡ **Native activation (optional)** | Described tools become ordinary tools in that session; cache-preserving on flash, ~25 → 12 steps on the same REA task |
 | ✅ **Validated before calling** | Ajv against the raw schema (JSON Schema 2020-12), errors with paths so the model can fix its call |
 | 💤 **Start on use, idle disconnect** | Disk-cached tool lists; timed-out handshakes clean up the child; DSH's credential scrubbing for child environments |
 | 🧊 **Cache-friendly** | The tool array is constant for the session; the index only changes with catalog content |
@@ -174,7 +176,8 @@ The 13-item end-to-end suite covers install and composition, a real REA run, ski
 ## Roadmap
 
 - [x] MCP and skill sources, one index, global and per-session switches, settings UI
-- [ ] **Native deferred mode.** The official DeepSeek endpoint already accepts `defer_loading` tools and `tool_reference` blocks in tool results (deferred tools cost no input tokens and the model calls them natively). Enabled once the DSH adapter supports it — proposal: [deepseek-harness#10812](https://github.com/deepseek-ai/deepseek-harness/discussions/10812)
+- [x] Native activation (0.2.0): described tools register as ordinary session tools through DSH 0.2.2's `tool_addition`
+- [ ] **Activate straight from search.** The official DeepSeek endpoint already accepts `defer_loading` tools and `tool_reference` blocks in tool results (deferred tools cost no input tokens and the model calls them natively). Enabled once the DSH adapter supports it — proposal: [deepseek-harness#10812](https://github.com/deepseek-ai/deepseek-harness/discussions/10812)
 - [ ] Retire the curated rules in `dsh-rea` once REA declares families in `tools/list` — proposal: [morluto/rea#6870](https://github.com/morluto/rea/issues/6870)
 - [ ] More sources: plugin tools, subagent presets
 - [ ] Optional hybrid retrieval (keywords + embeddings)

@@ -107,6 +107,10 @@ export interface ToolCallView {
 export interface HarnessAgent {
   readonly id: string
   readonly ctx?: HarnessContext
+  /** The session this agent drives; read for its last request header. */
+  readonly session?: { requestHeader?(): { readonly tools?: ReadonlyArray<{ readonly name: string }>; readonly config?: { readonly provider?: string; readonly model?: string } } | undefined }
+  /** Durable model selection for future steps. */
+  readonly model?: { current?(): { readonly provider: string; readonly model: string } | undefined }
 }
 
 export interface ToolExecutionLike {
