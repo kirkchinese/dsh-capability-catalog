@@ -370,3 +370,10 @@ test('describe lists the branches of a discriminated union on one line each', ()
   assert.match(signature, /\| kind: "page" \{collection, offset, limit\} → \/properties\/view\/oneOf\/3/u)
   assert.match(signature, /\| kind: "qlog" \{offset\?, limit\?, trace_index, facet="streams"\} → \/properties\/view\/oneOf\/17\/oneOf\/1/u)
 })
+
+test('a union expanded by path puts its head line before the branches', () => {
+  const tool = reaTools.find((candidate) => candidate.name === 'inspect_analysis_view')
+  const lines = compactSignature(tool.name, tool.inputSchema.properties.view, '/properties/view', { maxDepth: 2 }).split('\n')
+  assert.match(lines[0], /^inspect_analysis_view: oneOf<31> by kind → \/properties\/view\/oneOf$/u)
+  assert.match(lines[1], /^ {2}\| kind: "summary"/u)
+})

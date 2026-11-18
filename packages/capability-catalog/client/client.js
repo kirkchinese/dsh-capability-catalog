@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
   id: '@kirkchinese/dsh-capability-catalog',
   factory(require) {
     const React = require('react')
+    const { createPortal } = require('react-dom')
     const h = React.createElement
     const { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } = React
 
@@ -349,6 +350,7 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = useState('')
       const [placement, setPlacement] = useState(null)
       const anchor = useRef(null)
+      const popover = useRef(null)
       // Open toward the side with more room and stay inside the window. The popover is fixed to
       // the viewport so scroll and clip containers of the composer cannot cut it off; the
       // composer sits at the bottom in a session but in the middle of the window on a new one.
@@ -389,7 +391,9 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (!open) return undefined
         const onKey = (event) => { if (event.key === 'Escape') setOpen(false) }
-        const onPointer = (event) => { if (anchor.current && !anchor.current.contains(event.target)) setOpen(false) }
+        // The popover is portaled to the body, so a click inside it is outside the anchor.
+        const inside = (node) => (anchor.current && anchor.current.contains(node)) || (popover.current && popover.current.contains(node))
+        const onPointer = (event) => { if (!inside(event.target)) setOpen(false) }
         document.addEventListener('keydown', onKey)
         document.addEventListener('pointerdown', onPointer)
         return () => {
@@ -426,7 +430,9 @@ window.__ModuleLoader__.load({
             h('rect', { x: 2, y: 9, width: 5, height: 5, rx: 1 }), h('rect', { x: 9, y: 9, width: 5, height: 5, rx: 1 })),
           t.button,
           offCount > 0 ? h('span', { className: 'cc-trigger-badge' }, `−${offCount}`) : null),
-        open ? h('div', { className: 'cc-popover', role: 'dialog', 'aria-label': t.sessionTitle, style: placement || { visibility: 'hidden' } },
+        // The docked composer is the containing block for fixed descendants, so the popover is
+        // portaled to the document body and placed in viewport coordinates.
+        open ? createPortal(h('div', { className: 'cc-popover', ref: popover, role: 'dialog', 'aria-label': t.sessionTitle, style: placement || { visibility: 'hidden' } },
           h('div', { className: 'cc-popover-head' },
             h('span', null, t.sessionTitle),
             h('span', { className: 'cc-toolbar' },
@@ -458,8 +464,7 @@ window.__ModuleLoader__.load({
               skills.map((skill) => h('div', { className: 'cc-mini-row', key: skill.name },
                 h('div', { className: 'cc-row-main' },
                   h('div', { className: 'cc-row-name', title: skill.summary }, skill.name, skill.effective ? null : h('span', { className: 'cc-row-desc' }, `  · ${t.stateOff}`))),
-                h(Segmented, { t, label: skill.name, value: skill.session, onChange: (value) => change('skill', skill.name, value) })))) : null,
-)) : null)
+                h(Segmented, { t, label: skill.name, value: skill.session, onChange: (value) => change('skill', skill.name, value) })))) : null)), document.body) : null)
     }
 
     // ---------------------------------------------------------------- plugin

@@ -235,7 +235,9 @@ export function compactSignature(name: string, schema: JsonSchema, pointer = '',
   const lines: string[] = []
   const isObject = schema.type === 'object' || schema.properties !== undefined
   if (!isObject) {
-    lines.push(`${name}: ${typeOf(schema, pointer, resolved.maxDepth, resolved, lines, '  ')}`)
+    // Nested lines (union branches) follow the head line they belong to.
+    const nested: string[] = []
+    lines.push(`${name}: ${typeOf(schema, pointer, resolved.maxDepth, resolved, nested, '')}`, ...nested)
     return lines.join('\n')
   }
   lines.push(`${name}({${constraints(schema)}`)
