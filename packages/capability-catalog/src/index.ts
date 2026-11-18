@@ -14,6 +14,7 @@ import { Catalog, type MetaToolNames } from './catalog.js'
 import { McpSource, type McpServerConfig } from './sources/mcp.js'
 import { SkillSource } from './sources/skills.js'
 import { createTools, type ToolLimits } from './tools.js'
+import { Activator, type ActivationConfig } from './activation.js'
 import { ToggleStore } from './toggles.js'
 import { CatalogRemote, type CatalogRemoteApi } from './remote.js'
 import type { FamilyRule } from './families.js'
@@ -91,6 +92,11 @@ const ConfigSchema = z.object({
     callResultMaxChars: z.number().min(1000).default(120_000),
   }).default({}),
   cacheDir: z.string().description('Catalog cache directory; defaults to $DSH_HOME/capability-catalog.'),
+  activation: z.object({
+    mode: z.union([z.const('off'), z.const('native')]).default('off').description('Prototype. native: a described catalog tool is also registered on that agent as an ordinary tool, called directly from the next step.'),
+    maxActive: z.number().min(1).default(16).description('Most natively activated tools per agent.'),
+    maxSchemaBytes: z.number().min(256).default(16_000).description('Larger schemas stay behind capability_call.'),
+  }).default({}),
 })
 
 /** Plugin configuration schema (`config` of the `capability-catalog` row). */
@@ -105,6 +111,7 @@ export interface ResolvedConfig {
   toolNames: { search: string; describe: string; call: string }
   limits: ToolLimits
   cacheDir?: string
+  activation?: ActivationConfig
 }
 
 function dshHome(): string {
@@ -206,7 +213,15 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     catalog.add(skillSource)
   }
 
-  const tools = createTools(skillsService, catalog, names, config.limits, viewOf)
+  let activator: Activator | undefined
+  const tools = createTools(skillsService, catalog, names, config.limits, viewOf, {
+    onDescribed: (entry, exec) => activator?.activate(entry, exec),
+  })
+  const activation = config.activation ?? { mode: 'off', maxActive: 16, maxSchemaBytes: 16_000 }
+  if (activation.mode === 'native') {
+    activator = new Activator(activation, tools.run, names.call, (message, error) => logger.warn(message, error))
+    ctx.effect(() => () => activator?.dispose(), 'capability-catalog.native-activation')
+  }
   ctx.tools.register(tools.search)
   ctx.tools.register(tools.describe)
   ctx.tools.register(tools.call)

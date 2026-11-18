@@ -26,6 +26,12 @@ export interface ToolLimits {
 /** Resolves the viewing context of a tool call. */
 export type ViewOf = (exec: ToolExecutionLike) => Promise<ViewContext>
 
+/** Optional hooks around the fixed tools. */
+export interface ToolHooks {
+  /** Called after a tool entry is described; a returned line is appended to the result. */
+  readonly onDescribed?: (entry: CapabilityEntry, exec: ToolExecutionLike) => string | undefined
+}
+
 const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }]
 
 function kb(bytes: number | undefined): string {
@@ -126,8 +132,25 @@ class Validator {
  * @param limits - result limits.
  * @param viewOf - viewing-context resolver.
  */
-export function createTools(skills: HarnessContext['skills'], catalog: Catalog, names: MetaToolNames, limits: ToolLimits, viewOf: ViewOf): { search: ToolDefinitionLike; describe: ToolDefinitionLike; call: ToolDefinitionLike; skill: ToolDefinitionLike } {
+export function createTools(skills: HarnessContext['skills'], catalog: Catalog, names: MetaToolNames, limits: ToolLimits, viewOf: ViewOf, hooks: ToolHooks = {}): { search: ToolDefinitionLike; describe: ToolDefinitionLike; call: ToolDefinitionLike; skill: ToolDefinitionLike; run: (id: string, argumentsValue: Record<string, unknown>, exec: ToolExecutionLike) => Promise<{ text: string }> } {
   const validator = new Validator()
+
+  /** Validate and run one catalog tool; shared by capability_call and natively activated tools. */
+  const run = async (id: string, argumentsValue: Record<string, unknown>, exec: ToolExecutionLike): Promise<{ text: string }> => {
+    const view = await viewOf(exec)
+    const entry = resolveEntry(catalog, id, view)
+    if (entry.kind !== 'tool') throw new Error(`${entry.id} is a skill; load it with the \`${names.skill}\` tool instead.`)
+    const source = catalog.source(entry.source)
+    if (source?.call === undefined) throw new Error(`${entry.id} cannot be called: its source is unavailable.`)
+    const problems = validator.errors(entry.inputSchema, argumentsValue)
+    if (problems.length > 0) {
+      throw new Error(`Arguments for ${entry.id} do not match its schema:\n${problems.map((line) => `- ${line}`).join('\n')}\nRead the parameters with ${names.describe} (use \`path\` for nested parts) and retry.`)
+    }
+    const outcome: CallOutcome = await source.call(entry, argumentsValue, exec.signal)
+    const rendered = renderMcpContent(outcome.content, outcome.structuredContent, limits.callResultMaxChars)
+    if (outcome.isError) throw new Error(rendered || `${entry.id} reported an error without details.`)
+    return { text: rendered === '' ? '(no output)' : rendered }
+  }
 
   const search: ToolDefinitionLike = {
     name: names.search,
@@ -230,6 +253,8 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
         )
       }
       lines.push('', `Run it with ${names.call}: {"id": "${entry.id}", "arguments": {…}}.`)
+      const note = hooks.onDescribed?.(entry, exec)
+      if (note) lines.push(note)
       return { text: lines.join('\n') }
     },
     isConcurrencySafe: () => true,
@@ -256,20 +281,7 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
     },
     async execute(args, exec) {
       const input = args as { id: string; arguments?: Record<string, unknown> }
-      const view = await viewOf(exec)
-      const entry = resolveEntry(catalog, input.id, view)
-      if (entry.kind !== 'tool') throw new Error(`${entry.id} is a skill; load it with the \`${names.skill}\` tool instead.`)
-      const source = catalog.source(entry.source)
-      if (source?.call === undefined) throw new Error(`${entry.id} cannot be called: its source is unavailable.`)
-      const argumentsValue = input.arguments ?? {}
-      const problems = validator.errors(entry.inputSchema, argumentsValue)
-      if (problems.length > 0) {
-        throw new Error(`Arguments for ${entry.id} do not match its schema:\n${problems.map((line) => `- ${line}`).join('\n')}\nRead the parameters with ${names.describe} (use \`path\` for nested parts) and retry.`)
-      }
-      const outcome: CallOutcome = await source.call(entry, argumentsValue, exec.signal)
-      const rendered = renderMcpContent(outcome.content, outcome.structuredContent, limits.callResultMaxChars)
-      if (outcome.isError) throw new Error(rendered || `${entry.id} reported an error without details.`)
-      return { text: rendered === '' ? '(no output)' : rendered }
+      return run(input.id, input.arguments ?? {}, exec)
     },
     isConcurrencySafe: (args) => {
       const id = (args as { id?: string }).id
@@ -321,7 +333,7 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
     presentCall: (args) => ({ card: 'generic', title: `Load skill ${(args as { name?: string }).name ?? ''}`, kind: 'read', rawInput: (args as { name?: string }).name ?? '' }),
   }
 
-  return { search, describe, call, skill }
+  return { search, describe, call, skill, run }
 }
 
 /** Render a compact signature, reducing depth until it fits the describe budget. */

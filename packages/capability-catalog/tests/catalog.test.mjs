@@ -312,3 +312,29 @@ test('manifest covers the 0.2.1 and 0.2.2 lines without admitting 0.2.3 prerelea
     assert.equal(semver.satisfies(version, range, { includePrerelease: true }), false, `${version} must not be admitted`)
   }
 })
+
+test('native activation registers a described tool once per agent and runs it through the catalog', async () => {
+  const { Activator, nativeToolName } = await import('../lib/activation.js')
+  const registered = new Map()
+  const agentCtx = {
+    effect(fn) { const cleanup = fn(); return () => cleanup() },
+    tools: { register(def) { registered.set(def.name, def); return () => registered.delete(def.name) } },
+  }
+  const exec = { callId: 'c1', name: 'capability_describe', arguments: {}, agent: { id: 'session-a', ctx: agentCtx }, signal: AbortSignal.timeout(5000) }
+  const ran = []
+  const activator = new Activator({ mode: 'native', maxActive: 2, maxSchemaBytes: 1000 }, async (id, args) => { ran.push([id, args]); return { text: 'ok' } }, 'capability_call', () => {})
+  const entry = (name, bytes = 100) => ({ id: `mcp:rea/${name}`, kind: 'tool', source: 'mcp:rea', name, family: 'x', summary: '', description: 'd', inputSchema: { type: 'object' }, schemaBytes: bytes })
+  assert.equal(nativeToolName(entry('list_unknowns')), 'mcp__rea__list_unknowns')
+  assert.match(activator.activate(entry('list_unknowns'), exec), /Loaded as the native tool `mcp__rea__list_unknowns`/u)
+  assert.match(activator.activate(entry('list_unknowns'), exec), /also available/u)
+  assert.equal(registered.size, 1)
+  assert.deepEqual(await registered.get('mcp__rea__list_unknowns').execute({ a: 1 }, exec), { text: 'ok' })
+  assert.deepEqual(ran, [['mcp:rea/list_unknowns', { a: 1 }]])
+  assert.match(activator.activate(entry('huge', 5000), exec), /too large/u)
+  activator.activate(entry('second'), exec)
+  assert.match(activator.activate(entry('third'), exec), /configured maximum/u)
+  activator.dispose()
+  assert.equal(registered.size, 0)
+  const off = new Activator({ mode: 'off', maxActive: 2, maxSchemaBytes: 1000 }, async () => ({ text: '' }), 'capability_call', () => {})
+  assert.equal(off.activate(entry('list_unknowns'), exec), undefined)
+})
