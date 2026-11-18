@@ -9,6 +9,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js'
 import type { ValidateFunction } from 'ajv'
 import type { Catalog, MetaToolNames } from './catalog.js'
 import { compactSignature, resolvePointer } from './schema-view.js'
+import { clipEnd, wellFormed } from './text.js'
 import type { CallOutcome, CapabilityEntry, ContentBlock, HarnessContext, JsonSchema, SkillDefinitionLike, ToolDefinitionLike, ToolExecutionLike, ViewContext } from './types.js'
 
 /** Limits that shape tool results. */
@@ -32,7 +33,8 @@ export interface ToolHooks {
   readonly onDescribed?: (entry: CapabilityEntry, exec: ToolExecutionLike) => string | undefined
 }
 
-const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }]
+// Every rendered block is repaired: one lone surrogate would fail the whole provider request.
+const text = (value: string): ContentBlock[] => [{ type: 'text', text: wellFormed(value) }]
 
 function kb(bytes: number | undefined): string {
   return bytes === undefined ? '' : bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
@@ -78,9 +80,11 @@ export function renderMcpContent(content: readonly unknown[], structured: unknow
     }
   }
   if (parts.length === 0 && structured !== undefined) parts.push(JSON.stringify(structured, null, 1))
-  const joined = parts.join('\n')
+  // A server may return text that is already broken (strings decoded from binary data).
+  const joined = wellFormed(parts.join('\n'))
   if (joined.length <= maxChars) return joined
-  return `${joined.slice(0, maxChars)}\n…[truncated ${joined.length - maxChars} characters; narrow the request or use paging arguments if the tool offers them]`
+  const cut = clipEnd(joined, maxChars)
+  return `${joined.slice(0, cut)}\n…[truncated ${joined.length - cut} characters; narrow the request or use paging arguments if the tool offers them]`
 }
 
 /** Render a skill exactly as the Harness `skill` tool does. */
@@ -231,7 +235,7 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
       const view = await viewOf(exec)
       const entry = resolveEntry(catalog, input.id, view)
       if (entry.kind === 'skill') {
-        return { text: `${entry.id} (skill, family ${entry.family})\n\n${entry.description}\n\nLoad its full instructions with the \`${names.skill}\` tool: {"name": "${entry.name}"}.` }
+        return { text: wellFormed(`${entry.id} (skill, family ${entry.family})\n\n${entry.description}\n\nLoad its full instructions with the \`${names.skill}\` tool: {"name": "${entry.name}"}.`) }
       }
       const schema = entry.inputSchema ?? { type: 'object' }
       const lines = [`${entry.id} (tool, family ${entry.family}, params ${kb(entry.schemaBytes)})`, '', entry.description, '']
@@ -241,7 +245,7 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
         const raw = JSON.stringify(node, null, 1)
         if (Buffer.byteLength(raw) <= limits.schemaInlineMaxBytes) lines.push(`Schema at ${input.path} (exact JSON Schema):`, raw)
         else lines.push(`Schema at ${input.path} (compact view):`, fitSignature(entry.name, node as JsonSchema, input.path, limits))
-        return { text: lines.join('\n') }
+        return { text: wellFormed(lines.join('\n')) }
       }
       const raw = JSON.stringify(schema)
       if (Buffer.byteLength(raw) <= limits.schemaInlineMaxBytes) {
@@ -255,7 +259,7 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
       lines.push('', `Run it with ${names.call}: {"id": "${entry.id}", "arguments": {…}}.`)
       const note = hooks.onDescribed?.(entry, exec)
       if (note) lines.push(note)
-      return { text: lines.join('\n') }
+      return { text: wellFormed(lines.join('\n')) }
     },
     isConcurrencySafe: () => true,
     presentCall: (args) => ({ card: 'generic', title: `Describe ${(args as { id?: string }).id ?? ''}`, kind: 'read', rawInput: (args as { id?: string }).id ?? '' }),
@@ -341,7 +345,8 @@ function fitSignature(name: string, schema: JsonSchema, pointer: string, limits:
   for (const maxDepth of [3, 2, 1]) {
     const signature = compactSignature(name, schema, pointer, { maxDepth, maxDescription: maxDepth >= 2 ? 160 : 100 })
     if (signature.length <= limits.describeMaxChars || maxDepth === 1) {
-      return signature.length <= limits.describeMaxChars ? signature : `${signature.slice(0, limits.describeMaxChars)}\n…[signature truncated; expand parts with path]`
+      if (signature.length <= limits.describeMaxChars) return signature
+      return `${signature.slice(0, clipEnd(signature, limits.describeMaxChars))}\n…[signature truncated; expand parts with path]`
     }
   }
   return ''

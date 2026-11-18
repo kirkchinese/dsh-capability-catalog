@@ -13,6 +13,7 @@ import { McpSource } from '../lib/sources/mcp.js'
 import { skillFamilies, SkillSource } from '../lib/sources/skills.js'
 import { createTools, renderMcpContent } from '../lib/tools.js'
 import { ToggleStore } from '../lib/toggles.js'
+import { clipEnd, clipHead, hasLoneSurrogate, wellFormed, wellFormedDeep } from '../lib/text.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const reaTools = JSON.parse(gunzipSync(readFileSync(join(here, 'fixtures/rea-6.7.0-tools.json.gz'))).toString('utf8'))
@@ -376,4 +377,86 @@ test('a union expanded by path puts its head line before the branches', () => {
   const lines = compactSignature(tool.name, tool.inputSchema.properties.view, '/properties/view', { maxDepth: 2 }).split('\n')
   assert.match(lines[0], /^inspect_analysis_view: oneOf<31> by kind → \/properties\/view\/oneOf$/u)
   assert.match(lines[1], /^ {2}\| kind: "summary"/u)
+})
+
+test('a cut inside a surrogate pair drops the half instead of splitting it', () => {
+  const text = `${'x'.repeat(9)}🔹${'y'.repeat(40)}` // 51 code units; the diamond occupies 9 and 10
+  assert.equal(clipEnd(text, 10), 9, 'an end that would keep the high surrogate moves back one unit')
+  assert.equal(clipEnd(text, 11), 11, 'a cut after the pair is untouched')
+  assert.equal(clipEnd(text, 51), 51)
+  assert.equal(clipEnd(text, 0), 0)
+  assert.equal(clipHead(text, 10), 'x'.repeat(9))
+  assert.equal(clipHead(text, 5), 'x'.repeat(5))
+  assert.equal(clipHead('short', 10), 'short')
+  assert.equal(hasLoneSurrogate('\udd39'), true, 'a low surrogate without its leading half is lone')
+  assert.equal(hasLoneSurrogate('\ud83d'), true, 'a high surrogate without its trailing half is lone')
+  assert.equal(hasLoneSurrogate('🔹'), false)
+  assert.equal(hasLoneSurrogate(text), false)
+})
+
+test('truncated tool results never carry a lone surrogate', () => {
+  const payload = `${'x'.repeat(9)}🔹${'y'.repeat(40)}`
+  const rendered = renderMcpContent([{ type: 'text', text: payload }], undefined, 10)
+  assert.equal(hasLoneSurrogate(rendered), false)
+  assert.equal(rendered, `${'x'.repeat(9)}\n…[truncated 42 characters; narrow the request or use paging arguments if the tool offers them]`)
+  assert.match(renderMcpContent([{ type: 'text', text: 'x'.repeat(50) }], undefined, 10), /truncated 40 characters/u, 'a cut outside a pair keeps the full budget')
+})
+
+test('shortened summaries and schema descriptions never end on half a character', () => {
+  const summary = summarize(`${'字'.repeat(158)}🔹${'尾'.repeat(20)}`, 160)
+  assert.equal(hasLoneSurrogate(summary), false)
+  assert.equal(summary, `${'字'.repeat(158)}…`)
+
+  const schema = { type: 'object', properties: { q: { type: 'string', description: `${'a'.repeat(98)}🔹${'b'.repeat(20)}` } } }
+  const signature = compactSignature('t', schema, '', { maxDepth: 2, maxDescription: 100 })
+  assert.equal(hasLoneSurrogate(signature), false)
+  assert.ok(signature.includes(`${'a'.repeat(98)}…`), signature)
+})
+
+test('a describe signature over budget is truncated without splitting a pair', async () => {
+  const description = '🔹'.repeat(120)
+  const entry = {
+    id: 'mcp:astral/tool', kind: 'tool', source: 'mcp:astral', name: 'tool', family: 'general',
+    summary: 'astral', description,
+    inputSchema: { type: 'object', properties: Object.fromEntries(Array.from({ length: 40 }, (_, index) => [`p${String(index).padStart(2, '0')}`, { type: 'string', description }])) },
+    schemaBytes: 1,
+  }
+  const catalog = new Catalog()
+  catalog.add({ key: 'mcp:astral', entries: () => [entry], index: () => undefined })
+  const { describe } = createTools(undefined, catalog, NAMES, { ...LIMITS, describeMaxChars: 400 }, view)
+  const output = await describe.execute({ id: 'mcp:astral/tool' }, exec())
+  assert.match(output.text, /signature truncated/u)
+  assert.equal(hasLoneSurrogate(output.text), false)
+})
+
+test('text that arrives broken is repaired before it reaches the model', async () => {
+  // A server string decoded from binary data can carry half a character on its own.
+  const broken = `before \ud83d after \udd39 end`
+  assert.equal(wellFormed(broken), 'before \ufffd after \ufffd end')
+  assert.equal(wellFormed('🔹 intact'), '🔹 intact')
+  assert.deepEqual(wellFormedDeep({ description: broken, enum: ['\udd39'], nested: [{ title: 'ok' }] }), { description: 'before \ufffd after \ufffd end', enum: ['\ufffd'], nested: [{ title: 'ok' }] })
+
+  const rendered = renderMcpContent([{ type: 'text', text: broken }], undefined, 1000)
+  assert.equal(hasLoneSurrogate(rendered), false)
+  assert.equal(hasLoneSurrogate(summarize(`Tool ${broken}.`)), false)
+
+  const catalog = new Catalog()
+  const entry = { id: 'mcp:bin/strings', kind: 'tool', source: 'mcp:bin', name: 'strings', family: 'general', summary: summarize(broken), description: broken, inputSchema: { type: 'object', properties: { q: { type: 'string', description: broken } } }, schemaBytes: 80 }
+  catalog.add({ key: 'mcp:bin', entries: () => [entry], index: (_view, entries) => ({ source: 'mcp:bin', title: `mcp:bin — ${broken}`, total: entries.length, families: summarizeFamilies(entries, new Map()) }) })
+  assert.equal(hasLoneSurrogate(catalog.renderIndex({}, NAMES, false)), false)
+  const { describe, search } = createTools(undefined, catalog, NAMES, LIMITS, view)
+  assert.equal(hasLoneSurrogate((await describe.execute({ id: 'mcp:bin/strings' }, exec())).text), false)
+  const found = await search.execute({ query: 'strings' }, exec())
+  assert.equal(hasLoneSurrogate(search.output.render({}, found).map((block) => block.text).join('')), false)
+
+  const { Activator } = await import('../lib/activation.js')
+  const registered = new Map()
+  const agentCtx = { effect(fn) { const cleanup = fn(); return () => cleanup() }, tools: { register(def) { registered.set(def.name, def); return () => registered.delete(def.name) } } }
+  const activator = new Activator({ mode: 'native', maxActive: 4, maxSchemaBytes: 0 }, async () => ({ text: broken }), 'capability_call', () => {})
+  activator.activate(entry, { callId: 'c', name: 'capability_describe', arguments: {}, agent: { id: 's', ctx: agentCtx }, signal: AbortSignal.timeout(5000) })
+  const definition = registered.get('mcp__bin__strings')
+  assert.equal(hasLoneSurrogate(definition.description), false)
+  assert.equal(hasLoneSurrogate(definition.parameters.properties.q.description), false)
+  assert.equal(hasLoneSurrogate(definition.output.render({}, { text: broken })[0].text), false)
+  activator.dispose()
 })

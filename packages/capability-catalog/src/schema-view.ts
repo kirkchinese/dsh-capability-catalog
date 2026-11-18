@@ -7,6 +7,7 @@
  * JSON Pointers, and resolves a pointer back to a subtree on request.
  * @module
  */
+import { clipHead } from './text.js'
 import type { JsonSchema } from './types.js'
 
 /** Options for {@link compactSignature}. */
@@ -49,7 +50,7 @@ function escapePointer(key: string): string {
 
 function shorten(text: string, max: number): string {
   const flat = text.replace(/\s+/gu, ' ').trim()
-  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
+  return flat.length <= max ? flat : `${clipHead(flat, max - 1)}…`
 }
 
 function literal(value: unknown): string {

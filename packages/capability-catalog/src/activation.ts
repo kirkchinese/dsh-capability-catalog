@@ -11,6 +11,7 @@
  * session's last request header, so the Harness does not record a removal and re-addition.
  * @module
  */
+import { wellFormed, wellFormedDeep } from './text.js'
 import type { CapabilityEntry, ContentBlock, HarnessAgent, ToolDefinitionLike, ToolExecutionLike } from './types.js'
 
 /** Activation settings. */
@@ -134,11 +135,12 @@ export class Activator {
     const run = this.run
     const definition: ToolDefinitionLike = {
       name,
-      description: `${entry.description}\n\n(Capability ${entry.id}, loaded from the capability catalog.)`,
-      parameters: entry.inputSchema ?? { type: 'object' },
+      // The declaration is sent to the provider as is, so repair any broken string in it.
+      description: wellFormed(`${entry.description}\n\n(Capability ${entry.id}, loaded from the capability catalog.)`),
+      parameters: wellFormedDeep(entry.inputSchema ?? { type: 'object' }),
       output: {
         schema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
-        render: (_args: unknown, value: unknown): ContentBlock[] => [{ type: 'text', text: (value as { text: string }).text }],
+        render: (_args: unknown, value: unknown): ContentBlock[] => [{ type: 'text', text: wellFormed((value as { text: string }).text) }],
       },
       async execute(args: unknown, toolExec: ToolExecutionLike) {
         return run(entry.id, (args ?? {}) as Record<string, unknown>, toolExec)

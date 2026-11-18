@@ -8,6 +8,7 @@
  */
 import { summarize, summarizeFamilies } from '../catalog.js'
 import { assignFamilies, passesFilter, type FamilyRule } from '../families.js'
+import { clipEnd } from '../text.js'
 import type { CapabilityEntry, CapabilitySource, HarnessContext, SkillSummaryLike, SourceIndex, ViewContext } from '../types.js'
 
 /** Resolved skill-source configuration. */
@@ -57,7 +58,7 @@ export function skillFamilies(names: readonly string[]): Map<string, string> {
 function brief(summary: string, max: number): string {
   const flat = summary.replace(/\s+/gu, ' ').trim()
   if (flat.length <= max) return flat
-  const cut = flat.slice(0, max)
+  const cut = flat.slice(0, clipEnd(flat, max))
   const boundary = Math.max(cut.lastIndexOf(', '), cut.lastIndexOf('; '), cut.lastIndexOf(' — '), cut.lastIndexOf('，'))
   return `${(boundary > max * 0.5 ? cut.slice(0, boundary) : cut.slice(0, cut.lastIndexOf(' ') > 0 ? cut.lastIndexOf(' ') : max)).trim()}…`
 }

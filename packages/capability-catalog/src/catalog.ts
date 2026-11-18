@@ -3,6 +3,7 @@
  * @module
  */
 import { SearchIndex, type SearchHit } from './search.js'
+import { clipHead, wellFormed } from './text.js'
 import type { CapabilityEntry, CapabilitySource, FamilySummary, SourceIndex, ViewContext } from './types.js'
 
 /**
@@ -11,9 +12,9 @@ import type { CapabilityEntry, CapabilitySource, FamilySummary, SourceIndex, Vie
  * @param max - character budget.
  */
 export function summarize(description: string, max = 160): string {
-  const flat = description.replace(/\s+/gu, ' ').trim()
+  const flat = wellFormed(description).replace(/\s+/gu, ' ').trim()
   const sentence = /^(.+?[.!?。！？])(\s|$)/u.exec(flat)?.[1] ?? flat
-  return sentence.length <= max ? sentence : `${sentence.slice(0, max - 1)}…`
+  return sentence.length <= max ? sentence : `${clipHead(sentence, max - 1)}…`
 }
 
 /**
@@ -174,7 +175,7 @@ export class Catalog {
         lines.push(`- ${family.name} (${family.count})${description}: ${members}`)
       }
     }
-    return lines.join('\n')
+    return wellFormed(lines.join('\n'))
   }
 
   async refresh(view: ViewContext, signal: AbortSignal): Promise<void> {
