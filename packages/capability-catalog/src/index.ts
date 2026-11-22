@@ -146,8 +146,10 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
 
   const names: MetaToolNames = { ...config.toolNames, skill: 'skill' }
   const skillsService = ctx.get('skills') as HarnessContext['skills']
-  const workingDirectory = ctx.get('workingDirectory') as HarnessContext['workingDirectory']
   const cwdOf = async (agent: HarnessAgent | undefined, signal: AbortSignal): Promise<string | undefined> => {
+    // Read when needed: the working-directory service may start after this plugin (DSH 0.2.2 does), and
+    // without a cwd every workspace-scoped skill (a project's .claude/skills) is unknown to the skill tool.
+    const workingDirectory = ctx.get('workingDirectory') as HarnessContext['workingDirectory']
     if (agent === undefined || workingDirectory === undefined) return undefined
     try {
       return await workingDirectory.ensure(agent, signal)
@@ -327,6 +329,9 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
     const shadow = (agent: HarnessAgent) => {
       const agentCtx = agent.ctx
       if (agentCtx === undefined || owned.has(agent.id)) return
+      // Shadow only the native tool: an agent whose preset leaves skills out (a Claude Code subagent with a
+      // tools list) gets none. DSH 0.2.2 lets no plugin hide a tool registered on the agent afterwards.
+      if (agentCtx.tools.get('skill') === undefined) return
       try {
         const dispose = agentCtx.effect(() => {
           const unregister = agentCtx.tools.register(tools.skill)
