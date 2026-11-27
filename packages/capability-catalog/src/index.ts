@@ -11,6 +11,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import { Catalog, type MetaToolNames } from './catalog.js'
+import { DEFAULT_DISCOVERY_FILES, scanMcpConfigFiles, type McpDiscoveryConfig } from './discovery.js'
 import { McpSource, type McpServerConfig } from './sources/mcp.js'
 import { SkillSource } from './sources/skills.js'
 import { createTools, type ToolLimits } from './tools.js'
@@ -78,6 +79,9 @@ const ConfigSchema = z.object({
     families: z.array(FamilyRuleSchema).default([]),
     allow: z.array(String).default([]),
     deny: z.array(String).default([]),
+    extraDirs: z.array(String).default(['~/.claude/skills']).description('Skill directories indexed on top of the Harness catalog. `~`, `{home}`, `{dshHome}` and `{cwd}` expand. A native skill of the same name wins.'),
+    extraProjectDirs: z.array(String).default(['.dsh/skills', '.claude/skills', '.agents/skills']).description('Extra skill directories relative to each session working directory.'),
+    extraRescanMs: z.number().min(0).default(2_000).description('Minimum time between two scans of the extra skill directories; found skills join the index on the next step.'),
   }).default({}),
   toolNames: z.object({
     search: z.string().default('capability_search'),
@@ -92,6 +96,13 @@ const ConfigSchema = z.object({
     callResultMaxChars: z.number().min(1000).default(120_000),
   }).default({}),
   cacheDir: z.string().description('Catalog cache directory; defaults to $DSH_HOME/capability-catalog.'),
+  discover: z.object({
+    enabled: z.boolean().default(true).description('Register the MCP servers that other MCP clients already keep in their configuration files. A configured `mcp` entry, or a server another bundle contributes, keeps the name.'),
+    files: z.array(String).default([...DEFAULT_DISCOVERY_FILES]).description('Files read in order; each contributes its `mcpServers` map. `~`, `{home}`, `{dshHome}` and `{cwd}` expand; a missing file is ignored.'),
+    include: z.array(String).default([]).description('Glob allow list over discovered server names; empty allows all.'),
+    deny: z.array(String).default([]).description('Glob deny list over discovered server names; wins over include.'),
+    rescanMs: z.number().min(1000).default(30_000).description('Minimum time between two scans of those files.'),
+  }).default({}),
   activation: z.object({
     mode: z.union([z.const('off'), z.const('auto'), z.const('native')]).default('off').description('Native activation: a described MCP tool is also registered on that session as an ordinary tool, called directly from the next step. auto: only on routes that accept mid-conversation tool additions (deepseek-flash), so the prompt cache survives; native: on every route.'),
     maxActive: z.number().min(1).default(32).description('Most natively activated tools per session.'),
@@ -107,10 +118,11 @@ export const Config: z<any, any> = ConfigSchema
 export interface ResolvedConfig {
   enabled: boolean
   mcp: Array<McpServerConfig>
-  skills: { enabled: boolean; takeOverCatalog: boolean; indexMode: 'brief' | 'names'; briefChars: number; families: FamilyRule[]; allow: string[]; deny: string[] }
+  skills: { enabled: boolean; takeOverCatalog: boolean; indexMode: 'brief' | 'names'; briefChars: number; families: FamilyRule[]; allow: string[]; deny: string[]; extraDirs: string[]; extraProjectDirs: string[]; extraRescanMs: number }
   toolNames: { search: string; describe: string; call: string }
   limits: ToolLimits
   cacheDir?: string
+  discover?: McpDiscoveryConfig
   activation?: ActivationConfig
 }
 
@@ -207,17 +219,62 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   ctx.provide('capabilityCatalogServers', { addMcpServer } satisfies CapabilityCatalogService)
   await Promise.all(config.mcp.map((server) => addMcpServer(server)))
 
+  // MCP servers other clients already configured: read their files, register what is new, and
+  // drop what a file no longer lists. Explicit configuration always keeps the name.
+  const discovery = config.discover
+  const discovered = new Map<string, () => Promise<void>>()
+  let lastScan = 0
+  const syncDiscovered = async (): Promise<void> => {
+    if (discovery === undefined || !discovery.enabled) return
+    const now = Date.now()
+    if (now - lastScan < discovery.rescanMs) return
+    lastScan = now
+    const found = await scanMcpConfigFiles(discovery)
+    for (const problem of found.problems) logger.debug(`capability-catalog: discovery: ${problem}`)
+    const wanted = new Map(found.servers.map((server) => [server.name, server]))
+    for (const [name, dispose] of [...discovered]) {
+      if (wanted.has(name)) continue
+      discovered.delete(name)
+      logger.info(`capability-catalog: MCP server "${name}" is no longer in the discovery files`)
+      await dispose().catch((error: unknown) => logger.warn(`capability-catalog: stopping ${name} failed`, error))
+    }
+    for (const [name, server] of wanted) {
+      if (discovered.has(name) || servers.has(name)) continue
+      try {
+        discovered.set(name, await addMcpServer(server.config))
+        logger.info(`capability-catalog: discovered MCP server "${name}" from ${server.origin}`)
+      } catch (error) {
+        logger.warn(`capability-catalog: could not register "${name}" from ${server.origin}`, error)
+      }
+    }
+  }
+  ctx.effect(() => () => {
+    const pending = [...discovered.values()]
+    discovered.clear()
+    for (const dispose of pending) void dispose().catch(() => undefined)
+  }, 'capability-catalog.discovery')
+
   // Skills.
   const skillTakeover = config.skills.enabled && config.skills.takeOverCatalog && skillsService !== undefined
   let skillSource: SkillSource | undefined
   if (config.skills.enabled && skillsService !== undefined) {
-    skillSource = new SkillSource(skillsService, { indexMode: config.skills.indexMode, briefChars: config.skills.briefChars, families: config.skills.families, allow: config.skills.allow, deny: config.skills.deny })
+    skillSource = new SkillSource(skillsService, {
+      indexMode: config.skills.indexMode,
+      briefChars: config.skills.briefChars,
+      families: config.skills.families,
+      allow: config.skills.allow,
+      deny: config.skills.deny,
+      // Extra directories are only indexed when this catalog also serves the `skill` tool that
+      // can load them; otherwise they would be listed and then fail to load.
+      ...skillTakeover ? { extra: { dirs: config.skills.extraDirs, projectDirs: config.skills.extraProjectDirs, rescanMs: config.skills.extraRescanMs } } : {},
+    })
     catalog.add(skillSource)
   }
 
   let activator: Activator | undefined
   const tools = createTools(skillsService, catalog, names, config.limits, viewOf, {
     onDescribed: (entry, exec) => activator?.activate(entry, exec),
+    loadSkill: (name, view) => skillSource?.load(name, view) ?? Promise.resolve(undefined),
   })
   const activation: ActivationConfig = config.activation ?? { mode: 'off', maxActive: 32, maxSchemaBytes: 0 }
   // auto mode: whether each agent's current route declares `toolUpdate`, resolved per step.
@@ -297,6 +354,7 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
 
   // Prime an unscoped view so the first prompt of any agent already has an index, then
   // build each agent's own view when it is created, before its first prompt assembly.
+  await syncDiscovered().catch((error: unknown) => logger.warn('capability-catalog: MCP discovery failed', error))
   await catalog.refresh({}, AbortSignal.timeout(30_000)).catch((error: unknown) => logger.warn('capability-catalog: initial refresh failed', error))
   ctx.on('agent/created', async ({ agent, signal }: { agent: HarnessAgent; signal?: AbortSignal }) => {
     const effective = signal ?? AbortSignal.timeout(30_000)
@@ -311,6 +369,8 @@ export async function apply(rawCtx: unknown, config: ResolvedConfig): Promise<vo
   // Refresh per-agent state (skills depend on scope and working directory) before each step.
   ctx.on('agent/pre-step', async (payload: { agent: HarnessAgent; signal: AbortSignal }, next: () => Promise<unknown>) => {
     try {
+      // A server added to another client's config file joins the catalog on the next step.
+      await syncDiscovered()
       await catalog.refresh(await viewFor(payload.agent, payload.signal), payload.signal)
     } catch (error) {
       if (!payload.signal.aborted) logger.warn('capability-catalog: refresh failed', error)

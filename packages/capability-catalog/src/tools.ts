@@ -31,6 +31,11 @@ export type ViewOf = (exec: ToolExecutionLike) => Promise<ViewContext>
 export interface ToolHooks {
   /** Called after a tool entry is described; a returned line is appended to the result. */
   readonly onDescribed?: (entry: CapabilityEntry, exec: ToolExecutionLike) => string | undefined
+  /**
+   * Load a skill the Harness registry does not know, such as one found in an extra directory.
+   * Called only after the registry returns nothing for the name.
+   */
+  readonly loadSkill?: (name: string, view: ViewContext) => Promise<SkillDefinitionLike | undefined>
 }
 
 // Every rendered block is repaired: one lone surrogate would fail the whole provider request.
@@ -323,7 +328,7 @@ export function createTools(skills: HarnessContext['skills'], catalog: Catalog, 
       if (entry !== undefined && !('ambiguous' in entry) && !catalog.isEnabled(entry, view)) {
         throw new Error(`skill "${name}" is switched off for this session. The user can enable it from the capability controls next to the input box.`)
       }
-      const definition = await skills.get(name, lookup)
+      const definition = (await skills.get(name, lookup)) ?? (await hooks.loadSkill?.(name, view))
       if (definition === undefined) throw new Error(`skill "${name}" is unknown or no longer available`)
       if (!definition.invocation.modelInvocable) throw new Error(`skill "${name}" is not available for model invocation`)
       return {

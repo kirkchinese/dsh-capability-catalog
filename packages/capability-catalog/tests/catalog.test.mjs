@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, existsSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,8 @@ import { skillFamilies, SkillSource } from '../lib/sources/skills.js'
 import { createTools, renderMcpContent } from '../lib/tools.js'
 import { ToggleStore } from '../lib/toggles.js'
 import { clipEnd, clipHead, hasLoneSurrogate, wellFormed, wellFormedDeep } from '../lib/text.js'
+import { DEFAULT_DISCOVERY_FILES, parseDiscoveryFile, scanMcpConfigFiles, serverName } from '../lib/discovery.js'
+import { parseSkillFile, readSkillFile, scanSkillDirs } from '../lib/skill-dirs.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const reaTools = JSON.parse(gunzipSync(readFileSync(join(here, 'fixtures/rea-6.7.0-tools.json.gz'))).toString('utf8'))
@@ -301,17 +303,21 @@ test('every pointer in every REA signature resolves, at every depth', () => {
   assert.deepEqual(failures.slice(0, 10), [])
 })
 
-test('manifest covers the 0.2.1 and 0.2.2 lines without admitting 0.2.3 prereleases', () => {
+test('manifest opens the DSH floor and still bounds the 0.2.2 peer line', () => {
   const manifest = JSON.parse(readFileSync(join(here, '../package.json'), 'utf8'))
-  const range = manifest.engines.dsh
-  assert.equal(range, '>=0.2.1-rc.2 <0.2.3-0')
-  for (const name of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-typert-protocol']) assert.equal(manifest.peerDependencies[name], range)
-  for (const version of ['0.2.1-rc.2', '0.2.1-rc.5', '0.2.1', '0.2.2-alpha.3', '0.2.2-rc.3', '0.2.2-rc.4', '0.2.2']) {
-    assert.ok(semver.satisfies(version, range, { includePrerelease: true }), `${version} must be admitted`)
+  const floor = manifest.engines.dsh
+  assert.equal(floor, '>=0.2.1-rc.2')
+  for (const version of ['0.2.1-rc.2', '0.2.1-rc.5', '0.2.1', '0.2.2-alpha.3', '0.2.2-rc.3', '0.2.2', '0.2.3', '0.3.0-alpha.1']) {
+    assert.ok(semver.satisfies(version, floor, { includePrerelease: true }), `${version} must be admitted`)
   }
-  for (const version of ['0.2.1-rc.1', '0.2.3-alpha.1', '0.2.3', '0.3.0-alpha.1']) {
-    assert.equal(semver.satisfies(version, range, { includePrerelease: true }), false, `${version} must not be admitted`)
+  for (const version of ['0.2.0', '0.2.1-rc.1']) {
+    assert.equal(semver.satisfies(version, floor, { includePrerelease: true }), false, `${version} must not be admitted`)
   }
+  // The peer packages are versioned with the host, so they keep the closed 0.2.2 line.
+  const peers = '>=0.2.1-rc.2 <0.2.3-0'
+  for (const name of ['@deepseek-ai/dsh-subprocess', '@deepseek-ai/dsh-typert-protocol']) assert.equal(manifest.peerDependencies[name], peers)
+  assert.ok(semver.satisfies('0.2.2', peers, { includePrerelease: true }))
+  assert.equal(semver.satisfies('0.2.3', peers, { includePrerelease: true }), false)
 })
 
 test('native activation registers, restores, prunes and releases tools per agent', async () => {
@@ -459,4 +465,122 @@ test('text that arrives broken is repaired before it reaches the model', async (
   assert.equal(hasLoneSurrogate(definition.parameters.properties.q.description), false)
   assert.equal(hasLoneSurrogate(definition.output.render({}, { text: broken })[0].text), false)
   activator.dispose()
+})
+
+// ---------------------------------------------------------------------------
+// MCP discovery from other clients' configuration files
+// ---------------------------------------------------------------------------
+
+test('discovery maps another client\'s mcpServers onto catalog servers', () => {
+  const file = {
+    mcpServers: {
+      'code graph': { type: 'stdio', command: 'node', args: ['server.mjs'], env: { TOKEN: 'x', RETRIES: 3 } },
+      remote: { url: 'http://127.0.0.1:9000/mcp', headers: { Authorization: 'Bearer y' } },
+      legacy: { type: 'sse', url: 'http://127.0.0.1:9001/sse' },
+      paused: { command: 'x', disabled: true },
+      incomplete: { args: ['nothing'] },
+    },
+  }
+  const { servers, problems } = parseDiscoveryFile(file, 'C:/cfg/a.json')
+  assert.deepEqual(servers.map((server) => server.name), ['code_graph', 'remote'])
+  const [stdio, http] = servers.map((server) => server.config)
+  assert.equal(stdio.transport, 'stdio')
+  assert.equal(stdio.command, 'node')
+  assert.deepEqual(stdio.args, ['server.mjs'])
+  assert.deepEqual(stdio.env, { TOKEN: 'x' })
+  assert.equal(http.transport, 'streamable-http')
+  assert.deepEqual(http.headers, { Authorization: 'Bearer y' })
+  // The sse entry and the one with neither command nor url are reported, not silently dropped.
+  assert.equal(problems.length, 2)
+  assert.ok(problems.some((problem) => problem.includes('sse')))
+  assert.ok(problems.some((problem) => problem.includes('neither command nor url')))
+})
+
+test('server names are sanitised into catalog keys', () => {
+  assert.equal(serverName('code graph'), 'code_graph')
+  assert.equal(serverName('  my-server_2 '), 'my-server_2')
+  assert.equal(serverName('***'), undefined)
+  assert.equal(serverName('a'.repeat(40)).length, 32)
+})
+
+test('discovery reads files in order, first name wins, and honours deny', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'catalog-discovery-'))
+  const first = join(dir, 'first.json')
+  writeFileSync(first, JSON.stringify({ mcpServers: { alpha: { command: 'a' }, beta: { command: 'b' } } }))
+  const second = join(dir, 'second.json')
+  writeFileSync(second, JSON.stringify({ mcpServers: { alpha: { command: 'other' }, gamma: { command: 'c' } } }))
+  const found = await scanMcpConfigFiles({ enabled: true, files: [first, second, join(dir, 'missing.json')], include: [], deny: ['gamma'], rescanMs: 1000 })
+  assert.deepEqual(found.servers.map((server) => server.name), ['alpha', 'beta'])
+  assert.equal(found.servers[0].origin, first)
+  assert.equal(found.servers[0].config.command, 'a')
+  assert.ok(found.problems.some((problem) => problem.includes('already discovered')))
+
+  const bad = join(dir, 'bad.json')
+  writeFileSync(bad, '{oops')
+  const again = await scanMcpConfigFiles({ enabled: true, files: [bad], include: [], deny: [], rescanMs: 1000 })
+  assert.deepEqual(again.servers, [])
+  assert.ok(again.problems.some((problem) => problem.includes('invalid JSON')))
+  assert.equal(DEFAULT_DISCOVERY_FILES.length, 3)
+})
+
+// ---------------------------------------------------------------------------
+// Skills found in extra directories
+// ---------------------------------------------------------------------------
+
+function writeSkill(root, folder, text) {
+  mkdirSync(join(root, folder), { recursive: true })
+  writeFileSync(join(root, folder, 'SKILL.md'), text)
+}
+
+test('skill files keep their front matter out of the instructions', () => {
+  const parsed = parseSkillFile('---\nname: alpha\ndescription: "Does A"\n---\n# Alpha\n\nBody.')
+  assert.deepEqual(parsed.data, { name: 'alpha', description: 'Does A' })
+  assert.equal(parsed.body, '# Alpha\n\nBody.')
+  const plain = parseSkillFile('no front matter here')
+  assert.deepEqual(plain.data, {})
+  assert.equal(plain.body, 'no front matter here')
+})
+
+test('extra skill directories are scanned, deduplicated and loadable', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'catalog-skills-'))
+  const first = join(dir, 'first')
+  const second = join(dir, 'second')
+  writeSkill(first, 'alpha', '---\nname: alpha-skill\ndescription: Does A\n---\nAlpha body.')
+  writeSkill(first, 'beta', 'Beta body without front matter.')
+  writeSkill(second, 'alpha', '---\nname: alpha-skill\ndescription: Other\n---\nNope.')
+  const scan = await scanSkillDirs([first, second, join(dir, 'missing')])
+  assert.deepEqual([...scan.skills.keys()].sort(), ['alpha-skill', 'beta'])
+  assert.equal(scan.skills.get('alpha-skill').directory, join(first, 'alpha'))
+  assert.equal(scan.skills.get('alpha-skill').description, 'Does A')
+  assert.ok(scan.problems.some((problem) => problem.includes('duplicate')))
+  const definition = await readSkillFile(scan.skills.get('alpha-skill'))
+  assert.equal(definition.provider, 'filesystem')
+  assert.equal(definition.content, 'Alpha body.')
+  assert.deepEqual(definition.resourceBase, { kind: 'directory', path: join(first, 'alpha') })
+})
+
+test('extra skills join the index behind native ones and load through the skill tool', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'catalog-extra-'))
+  writeSkill(dir, 'native-dup', '---\nname: native\ndescription: from disk\n---\nDisk body.')
+  writeSkill(dir, 'only-extra', '---\nname: only-extra\ndescription: Only on disk\n---\nExtra body.')
+  const skills = {
+    snapshot: async () => ({ skills: [{ name: 'native', description: 'Native skill.', invocation: { modelInvocable: true, userInvocable: true }, source: 'user-agents', provider: 'fs' }], complete: true }),
+    get: async () => undefined,
+    list: async () => [],
+  }
+  const source = new SkillSource(skills, { indexMode: 'names', briefChars: 80, families: [], allow: [], deny: [], extra: { dirs: ['{cwd}'], projectDirs: [], rescanMs: 0 } })
+  const scope = {}
+  await source.refresh({ scope, cwd: dir }, AbortSignal.timeout(5000))
+  assert.deepEqual(source.entries({ scope }).map((entry) => entry.id), ['skill:native', 'skill:only-extra'])
+  // The native skill keeps its name and its description.
+  assert.equal(source.entries({ scope }).find((entry) => entry.name === 'native').description, 'Native skill.')
+
+  const catalog = new Catalog()
+  catalog.add(source)
+  const tools = createTools(skills, catalog, NAMES, LIMITS, async () => ({ scope, cwd: dir }), { loadSkill: (name, view) => source.load(name, view) })
+  const exec = (name) => ({ callId: 'c', name: 'skill', arguments: { name }, signal: AbortSignal.timeout(5000) })
+  const loaded = await tools.skill.execute({ name: 'only-extra' }, exec('only-extra'))
+  assert.equal(loaded.content, 'Extra body.')
+  assert.equal(loaded.provider, 'filesystem')
+  await assert.rejects(() => tools.skill.execute({ name: 'missing-skill' }, exec('missing-skill')), /unknown or no longer available/)
 })

@@ -145,6 +145,8 @@ dsh plugin --profile web add @kirkchinese/dsh-capability-catalog
       config: { name: github, command: npx, args: ['-y', '@modelcontextprotocol/server-github'] }
 ```
 
+**自动发现**：`discover.files` 里列的配置文件（默认 `$DSH_HOME/mcp.json`、`~/.claude.json`、`~/.cursor/mcp.json`）中的 `mcpServers` 会被自动登记，不必为同一个服务器再写一遍；`skills.extraDirs`（默认 `~/.claude/skills`）里的技能也会进索引并可加载。显式配置永远赢过自动发现，工作目录下的 `.mcp.json` 默认不读——见[插件说明](packages/capability-catalog/README.md#自动发现)。
+
 总开关：`capability-catalog` 行的 `enabled: false`。此时不注册工具、不进索引、不运行任何 MCP 服务器，原生 skill 目录恢复。全部配置项见[插件说明](packages/capability-catalog/README.md)。
 
 ## 实测
@@ -218,7 +220,7 @@ dsh plugin --profile web add @kirkchinese/dsh-capability-catalog
 
 ```sh
 pnpm install
-pnpm test                                 # 编译并运行 22 项单元测试
+pnpm test                                 # 编译并运行 37 项单元测试
 node scripts/sync-patches.mjs             # 由 packages/rea/families.yml 生成各包 patch
 node scripts/pack-local.mjs /tmp/packs    # 打包本地 tarball，用于隔离实例测试
 ```

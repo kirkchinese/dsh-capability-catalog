@@ -69,9 +69,18 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
       families: []
       allow: []
       deny: []
+      extraDirs: ['~/.claude/skills']                      # 原生目录之外再索引的目录
+      extraProjectDirs: ['.dsh/skills', '.claude/skills', '.agents/skills']   # 相对每个会话工作目录
+      extraRescanMs: 2000         # 扫描节流；新技能下一步即进索引
     toolNames: { search: capability_search, describe: capability_describe, call: capability_call }
     limits: { searchLimit: 8, maxSearchLimit: 60, schemaInlineMaxBytes: 6000, describeMaxChars: 14000, callResultMaxChars: 120000 }
     cacheDir: ''                  # 默认 $DSH_HOME/capability-catalog
+    discover:                     # 自动发现，见下文
+      enabled: true
+      files: ['{dshHome}/mcp.json', '{home}/.claude.json', '{home}/.cursor/mcp.json']
+      include: []
+      deny: []
+      rescanMs: 30000
     activation:                   # 原生激活，见上文
       mode: off                   # off / auto / native
       maxActive: 32
@@ -88,6 +97,15 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
       name: '@kirkchinese/dsh-capability-catalog/server'
       config: { name: github, command: npx, args: ['-y', '@modelcontextprotocol/server-github'] }
 ```
+
+## 自动发现
+
+两件事不用再手写配置：
+
+- **MCP 服务器**：按 `discover.files` 读其他 MCP 客户端已有的配置，取出其中的 `mcpServers` 映射并登记。Claude Code、Cursor 和 Claude Desktop 都是这个格式，所以同一个服务器不必配第二遍。路径可用 `~`、`{home}`、`{dshHome}`、`{cwd}`；文件不存在不算错误，读不懂或格式不合法的条目会写进日志。文件里删掉的服务器会随下一次扫描下线。
+- **skill**：`skills.extraDirs` 与 `extraProjectDirs` 里的 `<目录>/<技能>/SKILL.md` 会被索引并可加载，`~/.claude/skills` 默认在内。同名时原生目录优先，所以原生技能的行为不变。
+
+优先级与安全：显式 `mcp` 条目、以及别的包通过 `/server` 行注册的服务器，永远赢过自动发现；`discover.include` / `deny` 按名称通配过滤。发现只读 `files` 里列出的文件，不会去扫工作目录下的 `.mcp.json`——那个文件属于仓库，自动启动其中的命令等于让任意仓库执行代码。要接项目级服务器，请显式写一条 `mcp`。
 
 ## 开关与设置界面
 
@@ -109,5 +127,7 @@ Lazy capability catalog for DeepSeek Harness: one compact index plus three fixed
 - 中文查询与英文工具描述之间没有语义匹配；索引用英文族名，模型通常用英文检索。
 - 多一步检索与说明；对每轮都要用到的少数工具，直接注册更简单。
 - MCP 结果中的图片、音频以文字占位，不进入模型上下文。
+- 自动发现只读 `discover.files` 列出的文件，不读工作目录下的 `.mcp.json`；项目级服务器请显式配置。`~/.claude.json` 里按项目分组（`projects.<path>.mcpServers`）的服务器也不在发现范围内。
+- 使用 `sse` 传输的服务器不支持，扫描时会记一条说明并跳过。
 - 原生激活由 describe 触发；模型凭名称猜测未 describe 过的 `mcp__…` 工具会得到「未知工具」，再按索引走检索。
 - 工具结果中的 `tool_reference`（一次检索直接激活）仍需 DSH 适配器支持，见仓库 `docs/upstream/`。
